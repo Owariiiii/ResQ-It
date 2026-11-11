@@ -242,7 +242,7 @@
             <div class="results-title"><strong>Facilities · active and verified first{{ location ? ', then nearest' : '' }}</strong><ion-badge color="light">{{ facilities.length }}</ion-badge></div>
             <p *ngIf="locationSource === 'municipality'" class="location-note">Approximate municipality-center results; live GPS is not being used.</p>
             <div *ngIf="loading" class="loading-state"><ion-spinner name="crescent"></ion-spinner><span>Finding {{ isDirectoryTestingMode ? 'directory records' : 'verified facilities' }}…</span></div>
-            <p *ngIf="isShowingTestingDirectoryWarning" class="testing-directory-banner">LOCAL TESTING DIRECTORY — Numbers are unverified and may be outdated. Tap Call or SMS to open your device app; confirm the destination before proceeding.</p>
+            <p *ngIf="isShowingTestingDirectoryWarning" class="testing-directory-banner">UNVERIFIED DIRECTORY FALLBACK — Numbers are unverified and may be outdated. Tap Call or SMS to open your device app; confirm the destination before proceeding.</p>
             <p *ngIf="hasActiveUnverifiedMapContacts && !isShowingTestingDirectoryWarning" class="testing-directory-banner">Some numbers are not independently verified. You can still open the phone or messaging app; confirm the destination before proceeding.</p>
             <p *ngIf="loading && facilities.length" class="location-note">Refreshing this search. Previously loaded results remain visible until the refresh completes.</p>
             <div *ngIf="errorMessage && !loading" class="error-state"><ion-icon name="alert-circle-outline"></ion-icon><p>{{ errorMessage }}<br><small *ngIf="facilities.length">Showing previously loaded verified results; they may be outdated.</small></p><ion-button size="small" fill="clear" (click)="findFacilities()">Try again</ion-button></div>
@@ -307,9 +307,9 @@
         <p class="eyebrow">DIRECTORY</p><h1>Emergency hotlines</h1>
         <p class="subtitle">Emergency numbers vary by country and region. Verify the right number with official local sources.</p>
         <p *ngIf="guestMode && !isShowingTestingDirectoryWarning" class="subtitle">Showing active records and administrator-published review contacts from Firebase. Tap a number to open your phone or messaging app; unverified contacts may be inaccurate.</p>
-        <p *ngIf="guestMode && isShowingTestingDirectoryWarning" class="subtitle">Local development preview from your supplied CSV because the Firebase directory has no active records. Numbers can open your phone or messaging app, but have not been independently verified.</p>
+        <p *ngIf="guestMode && isShowingTestingDirectoryWarning" class="subtitle">Showing the supplied emergency contact list because no public Firebase records are available. Numbers can open your phone or messaging app, but have not been independently verified.</p>
         <aside *ngIf="isShowingTestingDirectoryWarning" class="testing-directory-banner" role="status">
-          LOCAL TESTING DIRECTORY — Showing your supplied CSV data because Firebase has no active records. Tap Call or SMS to open your device app. Verify the number and destination before proceeding.
+          UNVERIFIED DIRECTORY FALLBACK — Showing your supplied contact list because no public Firebase records are available. Tap Call or SMS to open your device app. Verify the number and destination before proceeding.
         </aside>
         <div class="hotline-filters">
           <ion-item class="search-field" lines="none"><ion-icon name="search-outline" slot="start"></ion-icon><ion-input id="hotline-search" name="hotlineSearch" [ngModel]="hotlineSearchText" (ngModelChange)="onHotlineSearchChange($event)" placeholder="Search name, region or country" aria-label="Search hotlines"></ion-input></ion-item>

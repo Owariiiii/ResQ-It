@@ -36,6 +36,11 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "emergency-contact-import.csv",
+                "input": "data",
+                "output": "/data"
               }
             ],
             "outputPath": "dist/resq-it"

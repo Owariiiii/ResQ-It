@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, NgZone, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -388,7 +388,8 @@ export class AppComponent implements OnInit, OnDestroy {
     readonly auth: AuthService,
     private readonly privateApi: PrivateApiService,
     private readonly toastController: ToastController,
-    private readonly alertController: AlertController
+    private readonly alertController: AlertController,
+    private readonly zone: NgZone
   ) {
     this.firebaseConfigured = firebase.isConfigured;
     addIcons({
@@ -878,16 +879,24 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       const entries = await this.fetchVerifiedHotlines(forceRefresh);
       if (generation !== this.hotlinesLoadGeneration) return;
-      this.hotlines = entries;
-      this.hotlinesDataLoaded = true;
-      this.hotlinesStale = false;
-      this.hotlinesError = '';
+      this.zone.run(() => {
+        this.hotlines = entries;
+        this.hotlinesDataLoaded = true;
+        this.hotlinesStale = false;
+        this.hotlinesError = '';
+      });
     } catch (error) {
       if (generation !== this.hotlinesLoadGeneration) return;
-      this.hotlinesStale = this.hotlinesDataLoaded;
-      this.hotlinesError = error instanceof Error ? error.message : 'Unable to load verified hotlines.';
+      this.zone.run(() => {
+        this.hotlinesStale = this.hotlinesDataLoaded;
+        this.hotlinesError = error instanceof Error ? error.message : 'Unable to load verified hotlines.';
+      });
     } finally {
-      if (generation === this.hotlinesLoadGeneration) this.hotlinesLoading = false;
+      if (generation === this.hotlinesLoadGeneration) {
+        this.zone.run(() => {
+          this.hotlinesLoading = false;
+        });
+      }
     }
   }
 

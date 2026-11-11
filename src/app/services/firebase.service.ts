@@ -98,6 +98,7 @@ export class FirebaseService {
   private publicHotlinesRequest: Promise<Hotline[]> | null = null;
   private readonly assetHttp: HttpClient;
   private readonly developmentCsvSeed: Promise<Hotline[]>;
+  private readonly publicDirectoryFallback: Promise<Hotline[]>;
   private readonly filteredHotlineCache = new Map<string, { expiresAt: number; records: Hotline[] }>();
 
   constructor(httpBackend: HttpBackend) {
@@ -144,6 +145,9 @@ export class FirebaseService {
     }
     this.developmentCsvSeed = environment.directoryTestingMode && !environment.production
       ? this.loadDevelopmentCsvSeed()
+      : Promise.resolve([]);
+    this.publicDirectoryFallback = environment.production
+      ? this.loadPublicDirectoryFallback()
       : Promise.resolve([]);
   }
 
@@ -1327,6 +1331,7 @@ export class FirebaseService {
     const seedRecords = environment.directoryTestingMode && !environment.production
       ? await this.developmentCsvSeed
       : [];
+    const publicFallback = environment.production ? await this.publicDirectoryFallback : [];
     const allowTestingRecords = environment.directoryTestingMode && this.isAdmin;
     try {
       const directoryRequest = allowTestingRecords
@@ -1365,15 +1370,27 @@ export class FirebaseService {
         }
       }
       const records = [...recordsByKey.values()];
+      if (environment.production) {
+        if (records.length) {
+          this.showingLegacyDirectoryData = false;
+          return records;
+        }
+        if (publicFallback.length) {
+          this.showingLegacyDirectoryData = true;
+          console.warn('[Directory preview] Firestore has no public hotline records; showing the bundled, unverified contact list.');
+          return publicFallback;
+        }
+      }
       this.showingLegacyDirectoryData = seedRecords.length > 0;
       if (records.length || environment.production || !environment.directoryTestingMode) {
         return records;
       }
     } catch (error) {
-      if (!seedRecords.length) throw error;
+      const fallbackRecords = environment.production ? publicFallback : seedRecords;
+      if (!fallbackRecords.length) throw error;
       this.showingLegacyDirectoryData = true;
-      console.error('[Directory preview] Could not merge Firebase directory records; showing the bundled development preview.', error);
-      return seedRecords;
+      console.error('[Directory preview] Could not load the Firebase directory; showing the bundled, unverified contact list.', error);
+      return fallbackRecords;
     }
 
     const legacySnapshot = await this.withDirectoryReadTimeout(this.readCollection(
@@ -1441,6 +1458,49 @@ export class FirebaseService {
       console.error('[Directory preview] Could not load the bundled development CSV.', error);
       return [];
     }
+  }
+
+  private async loadPublicDirectoryFallback(): Promise<Hotline[]> {
+    const csv = await firstValueFrom(this.assetHttp.get(
+      '/data/emergency-contact-import.csv',
+      { responseType: 'text' }
+    ));
+    const rows = parseFacilityCsv(csv);
+    const invalidRows = rows.filter((row) => row.errors.length > 0);
+    if (invalidRows.length) {
+      console.warn('[Directory fallback] Excluding invalid contact rows.', {
+        invalidRows: invalidRows.length,
+        totalRows: rows.length
+      });
+    }
+    return rows
+      .filter((row) => row.errors.length === 0 && Boolean(row.facility.phone?.trim()))
+      .map((row) => {
+        const facility = row.facility;
+        return {
+          id: `public-csv-${row.line}`,
+          name: facility.name,
+          type: facility.type,
+          phoneNumber: facility.phone ?? '',
+          phoneVerified: false,
+          alternativePhone: facility.alternativePhone ?? [],
+          countryCode: 'PH',
+          region: facility.region ?? '',
+          ...(facility.municipality ? { municipality: facility.municipality } : {}),
+          ...(facility.address ? { address: facility.address } : {}),
+          ...(facility.latitude !== undefined ? { latitude: facility.latitude } : {}),
+          ...(facility.longitude !== undefined ? { longitude: facility.longitude } : {}),
+          category: facility.category ?? 'other',
+          description: facility.description || 'User-provided listing; not independently verified.',
+          officialSourceUrl: facility.officialSourceUrl ?? facility.sourceUrl ?? '',
+          sourceUrl: facility.sourceUrl ?? facility.officialSourceUrl ?? '',
+          ...(facility.openingHours ? { openingHours: facility.openingHours } : {}),
+          isCallable: false,
+          verificationStatus: 'unverified' as const,
+          isActive: false,
+          isPublic: true
+        };
+      });
   }
 
   private invalidatePublicHotlinesCache(): void {
@@ -1590,6 +1650,7 @@ export class FirebaseService {
         hasUserId: typeof data['userId'] === 'string'
       });
     }
+
     return {
       reportId: id,
       sourceCollection,
