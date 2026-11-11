@@ -416,6 +416,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   async openNearbyEmergency(): Promise<void> {
     this.activeTab = 'map';
+    window.requestAnimationFrame(() => { void this.renderMap(); });
     await this.refreshCurrentLocation();
   }
 
@@ -2322,10 +2323,14 @@ export class AppComponent implements OnInit, OnDestroy {
   private async renderMap(): Promise<void> {
     const container = document.getElementById('facility-map');
     const firstMappedFacility = this.facilities.find((facility) => this.facilityHasCoordinates(facility));
-    const center = this.location ?? (firstMappedFacility && this.facilityHasCoordinates(firstMappedFacility)
-      ? { latitude: firstMappedFacility.latitude, longitude: firstMappedFacility.longitude }
-      : null);
-    if (!container || !center) return;
+    const selectedArea = this.municipalities.find((municipality) => municipality.name === this.selectedMunicipality);
+    const center = this.location
+      ?? (firstMappedFacility && this.facilityHasCoordinates(firstMappedFacility)
+        ? { latitude: firstMappedFacility.latitude, longitude: firstMappedFacility.longitude }
+        : selectedArea
+          ? { latitude: selectedArea.latitude, longitude: selectedArea.longitude }
+          : { latitude: 13.411, longitude: 121.18 });
+    if (!container || !container.isConnected) return;
     try {
       const leaflet = await this.loadLeaflet();
       if (!this.map) {
@@ -2372,6 +2377,7 @@ export class AppComponent implements OnInit, OnDestroy {
           { padding: [24, 24], maxZoom: 12 }
         );
       }
+      window.requestAnimationFrame(() => this.map?.invalidateSize({ pan: false }));
     } catch (error) {
       this.errorMessage = error instanceof Error
         ? `The map could not be loaded: ${error.message}`
