@@ -1,0 +1,266 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && request.auth.uid == '279f5QypzDUvSe7diQl1AqlbUYK2'
+        && request.auth.token.admin == true;
+    }
+
+    function validProfile(data) {
+      return data.keys().hasAll(['uid', 'fullName', 'email', 'role'])
+        && data.keys().hasOnly(['uid', 'fullName', 'email', 'role', 'phoneNumber', 'emergencyContactName', 'emergencyContactNumber', 'accountCreatedAt', 'accountUpdatedAt'])
+        && data.uid is string && data.uid == request.auth.uid
+        && data.fullName is string && data.fullName.size() > 0 && data.fullName.size() <= 120
+        && data.email is string && data.email.size() > 0 && data.email.size() <= 254
+        && (data.role == 'user' || (data.role == 'admin' && isAdmin()));
+    }
+
+    function validReport(data) {
+      return data.keys().hasAll(['userId', 'category', 'status', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'category', 'description', 'latitude', 'longitude', 'selectedFacilityName', 'status', 'createdAt'])
+        && data.category in ['medical', 'fire', 'police', 'accident', 'disaster', 'other']
+        && data.status in ['Submitted', 'Under Review', 'Resolved', 'Closed'];
+    }
+
+    function validSuggestion(data) {
+      return data.keys().hasAll(['submittedBy', 'facilityName', 'facilityType', 'latitude', 'longitude', 'reviewStatus', 'createdAt'])
+        && data.keys().hasOnly(['submittedBy', 'facilityName', 'facilityType', 'address', 'latitude', 'longitude', 'contactNumber', 'sourceUrl', 'reviewStatus', 'reviewNote', 'createdAt'])
+        && data.facilityName is string && data.facilityName.size() > 0 && data.facilityName.size() <= 200
+        && data.facilityType is string && data.facilityType.size() > 0 && data.facilityType.size() <= 80
+        && data.latitude is number && data.latitude >= -90 && data.latitude <= 90
+        && data.longitude is number && data.longitude >= -180 && data.longitude <= 180
+        && data.reviewStatus in ['pending', 'approved', 'rejected'];
+    }
+
+    function validCategory(data) {
+      return data.keys().hasAll([
+        'name', 'slug', 'description', 'icon', 'facilityTypes', 'isActive', 'displayOrder'
+      ])
+      && data.keys().hasOnly([
+        'name', 'slug', 'description', 'icon', 'facilityTypes', 'isActive',
+        'displayOrder', 'createdAt', 'updatedAt'
+      ])
+      && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+      && data.slug is string && data.slug.matches('^[a-z0-9]+(-[a-z0-9]+)*$')
+      && data.description is string && data.description.size() <= 500
+      && data.icon is string && data.icon.size() <= 80
+      && data.facilityTypes is list && data.facilityTypes.size() <= 30
+      && data.isActive is bool
+      && data.displayOrder is int && data.displayOrder >= 0 && data.displayOrder <= 10000;
+    }
+
+    function validHotline(data) {
+      return data.keys().hasAll([
+        'name', 'countryCode', 'region', 'category',
+        'description', 'officialSourceUrl', 'verificationStatus', 'isActive'
+      ])
+      && data.keys().hasOnly([
+        'name', 'facilityName', 'agencyName', 'type', 'facilityType', 'category',
+        'municipality', 'city', 'region', 'province', 'address', 'barangay',
+        'latitude', 'lat', 'longitude', 'lng', 'phone', 'phoneNumber', 'contactNumber',
+        'primaryPhone', 'alternativePhone', 'countryCode', 'description',
+        'officialSourceUrl', 'sourceUrl', 'email', 'emailVerified',
+        'facebook', 'facebookUrl', 'facebookVerified', 'website', 'websiteUrl',
+        'websiteVerified', 'openingHours', 'locationVerified', 'isCallable',
+        'operatingHours', 'status', 'active', 'callable', 'verificationStatus',
+        'isActive', 'isPublic', 'phoneVerified', 'lastVerifiedAt', 'createdAt', 'updatedAt',
+        'legacyFacilityId', 'legacySourceUrl', 'legacyWebsite', 'legacyFacebook', 'legacyData'
+      ])
+      && data.name is string && data.name.size() > 0 && data.name.size() <= 160
+      && (!('facilityName' in data) || (data.facilityName is string && data.facilityName.size() <= 160))
+      && (!('agencyName' in data) || (data.agencyName is string && data.agencyName.size() <= 160))
+      && (!('type' in data) || (data.type is string && data.type.size() <= 80))
+      && (!('facilityType' in data) || (data.facilityType is string && data.facilityType.size() <= 80))
+      && (!('municipality' in data) || (data.municipality is string && data.municipality.size() <= 100))
+      && (!('city' in data) || (data.city is string && data.city.size() <= 100))
+      && (!('address' in data) || (data.address is string && data.address.size() <= 300))
+      && (!('barangay' in data) || (data.barangay is string && data.barangay.size() <= 100))
+      && (!('latitude' in data) || (data.latitude is number && data.latitude >= -90 && data.latitude <= 90))
+      && (!('lat' in data) || (data.lat is number && data.lat >= -90 && data.lat <= 90))
+      && (!('longitude' in data) || (data.longitude is number && data.longitude >= -180 && data.longitude <= 180))
+      && (!('lng' in data) || (data.lng is number && data.lng >= -180 && data.lng <= 180))
+      && (!('phone' in data) || (data.phone is string && data.phone.size() <= 40))
+      && (!('phoneNumber' in data) || (data.phoneNumber is string && data.phoneNumber.size() <= 40))
+      && (!('contactNumber' in data) || (data.contactNumber is string && data.contactNumber.size() <= 40))
+      && (!('primaryPhone' in data) || (data.primaryPhone is string && data.primaryPhone.size() <= 40))
+      && (!('alternativePhone' in data) || (data.alternativePhone is list && data.alternativePhone.size() <= 5))
+      && data.countryCode is string && data.countryCode.size() <= 8
+      && data.region is string && data.region.size() <= 120
+      && data.category in ['medical', 'fire', 'police', 'accident', 'disaster', 'other']
+      && data.description is string && data.description.size() <= 500
+      && (!('officialSourceUrl' in data) || data.officialSourceUrl == ''
+        || (data.officialSourceUrl is string && data.officialSourceUrl.matches('https://.+')))
+      && (!('sourceUrl' in data) || data.sourceUrl == ''
+        || (data.sourceUrl is string && data.sourceUrl.matches('https://.+')))
+      && (!('email' in data) || (data.email is string && data.email.size() <= 254))
+      && (!('emailVerified' in data) || data.emailVerified is bool)
+      && (!('facebook' in data) || (data.facebook is string && data.facebook.size() <= 500
+        && (data.facebook == '' || data.facebook.matches('https://.+'))))
+      && (!('facebookVerified' in data) || data.facebookVerified is bool)
+      && (!('facebookUrl' in data) || (data.facebookUrl is string && data.facebookUrl.size() <= 500
+        && (data.facebookUrl == '' || data.facebookUrl.matches('https://.+'))))
+      && (!('website' in data) || (data.website is string && data.website.size() <= 500
+        && (data.website == '' || data.website.matches('https://.+'))))
+      && (!('websiteVerified' in data) || data.websiteVerified is bool)
+      && (!('websiteUrl' in data) || (data.websiteUrl is string && data.websiteUrl.size() <= 500
+        && (data.websiteUrl == '' || data.websiteUrl.matches('https://.+'))))
+      && (!('openingHours' in data) || (data.openingHours is string && data.openingHours.size() <= 160))
+      && (!('operatingHours' in data) || (data.operatingHours is string && data.operatingHours.size() <= 160))
+      && data.verificationStatus in ['verified', 'unverified']
+      && (!('status' in data) || (data.status is string && data.status.size() <= 40))
+      && (!('active' in data) || data.active is bool)
+      && (!('callable' in data) || data.callable is bool)
+      && data.isActive is bool
+      && (!('isPublic' in data) || data.isPublic is bool)
+      && (!('phoneVerified' in data) || data.phoneVerified is bool)
+      && (!('locationVerified' in data) || data.locationVerified is bool)
+      && (!('isCallable' in data) || data.isCallable is bool)
+      && (!('lastVerifiedAt' in data) || data.lastVerifiedAt is timestamp)
+      && (!('legacyFacilityId' in data) || (data.legacyFacilityId is string && data.legacyFacilityId.size() <= 1500))
+      && (!('legacySourceUrl' in data) || (data.legacySourceUrl is string && data.legacySourceUrl.size() <= 500))
+      && (!('legacyWebsite' in data) || (data.legacyWebsite is string && data.legacyWebsite.size() <= 500))
+      && (!('legacyFacebook' in data) || (data.legacyFacebook is string && data.legacyFacebook.size() <= 500))
+      && (!('legacyData' in data) || data.legacyData is map)
+      && (data.verificationStatus != 'verified' || 'lastVerifiedAt' in data);
+    }
+
+    function validGuide(data) {
+      return data.keys().hasAll([
+        'title', 'category', 'summary', 'instructions', 'sourceUrl', 'reviewedBy', 'isPublished'
+      ])
+      && data.keys().hasOnly([
+        'title', 'category', 'summary', 'instructions', 'sourceUrl', 'reviewedBy',
+        'isPublished', 'createdAt', 'updatedAt'
+      ])
+      && data.title is string && data.title.size() > 0 && data.title.size() <= 160
+      && data.category in ['medical', 'fire', 'police', 'accident', 'disaster', 'other']
+      && data.summary is string && data.summary.size() > 0 && data.summary.size() <= 1000
+      && data.instructions is string && data.instructions.size() > 0 && data.instructions.size() <= 10000
+      && data.sourceUrl is string && data.sourceUrl.matches('https://.+')
+      && data.reviewedBy is string && data.reviewedBy == request.auth.uid
+      && data.isPublished is bool;
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && validProfile(request.resource.data)
+        && (request.resource.data.role == 'user'
+          || (request.resource.data.role == 'admin' && isAdmin()))
+        && request.resource.data.accountCreatedAt == request.time
+        && request.resource.data.accountUpdatedAt == request.time;
+      allow update: if signedIn()
+        && request.auth.uid == userId
+        && validProfile(request.resource.data)
+        && (request.resource.data.role == resource.data.role
+          || (!('role' in resource.data)
+            && (request.resource.data.role == 'user'
+              || (request.resource.data.role == 'admin' && isAdmin())))
+          || (resource.data.role == 'user'
+            && request.resource.data.role == 'admin'
+            && isAdmin()))
+        && (('accountCreatedAt' in resource.data
+            && request.resource.data.accountCreatedAt == resource.data.accountCreatedAt)
+          || (!('accountCreatedAt' in resource.data)
+            && request.resource.data.accountCreatedAt == request.time))
+        && request.resource.data.accountUpdatedAt == request.time;
+      allow delete: if false;
+    }
+
+    match /emergencyCategories/{categoryId} {
+      allow read: if resource.data.isActive == true || isAdmin();
+      allow create: if isAdmin()
+        && validCategory(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if isAdmin()
+        && validCategory(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    match /emergencyHotlines/{hotlineId} {
+      allow read: if isAdmin()
+        || resource.data.isActive == true
+        || resource.data.isPublic == true;
+      allow create: if isAdmin()
+        && validHotline(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if isAdmin()
+        && validHotline(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    match /emergencyFacilities/{facilityId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /emergencyGuides/{guideId} {
+      allow read: if resource.data.isPublished == true || isAdmin();
+      allow create: if isAdmin()
+        && validGuide(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if isAdmin()
+        && validGuide(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    match /emergencyReports/{reportId} {
+      allow create: if signedIn()
+        && validReport(request.resource.data)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'Submitted'
+        && request.resource.data.createdAt == request.time;
+      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow update: if isAdmin()
+        && validReport(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+      allow delete: if false;
+    }
+
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && validReport(request.resource.data)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'Submitted'
+        && request.resource.data.createdAt == request.time;
+      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow update: if isAdmin()
+        && validReport(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+      allow delete: if false;
+    }
+
+    match /facilitySuggestions/{suggestionId} {
+      allow create: if signedIn()
+        && validSuggestion(request.resource.data)
+        && request.resource.data.submittedBy == request.auth.uid
+        && request.resource.data.reviewStatus == 'pending'
+        && request.resource.data.createdAt == request.time;
+      allow read: if signedIn() && (resource.data.submittedBy == request.auth.uid || isAdmin());
+      allow update: if isAdmin()
+        && validSuggestion(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reviewStatus', 'reviewNote']);
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read: if false;
+      allow write: if false;
+    }
+  }
+}

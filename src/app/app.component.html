@@ -1,0 +1,774 @@
+<ion-app>
+  <div class="intro-screen" aria-hidden="true">
+    <div class="intro-mark"><ion-icon name="shield-checkmark-outline"></ion-icon></div>
+    <strong>ResQ-It</strong>
+    <span>Find Help. Locate Safety. Act Fast.</span>
+  </div>
+
+  <ng-container *ngIf="auth.authReady; else authStarting">
+    <section *ngIf="!auth.currentUser && !guestMode" class="auth-gate">
+      <div class="auth-gate-brand">
+        <span class="brand-mark"><ion-icon name="shield-checkmark-outline"></ion-icon></span>
+        <span>ResQ-It</span>
+      </div>
+      <div class="login-card">
+        <aside *ngIf="!isOnline || auth.initializationError" class="connection-banner" role="status" aria-live="polite">
+          <span>{{ !isOnline ? 'You are offline. Sign-in requires a connection.' : auth.initializationError }}</span>
+          <button type="button" (click)="retryCurrentPage()">Retry</button>
+        </aside>
+        <div class="login-icon"><ion-icon name="shield-checkmark-outline"></ion-icon></div>
+        <p class="eyebrow">{{ authMode === 'login' ? 'WELCOME BACK' : 'JOIN RESQ-IT' }}</p>
+        <h1>{{ authMode === 'login' ? 'Sign in to continue' : 'Create your account' }}</h1>
+        <p class="login-intro">Your account keeps your private information separate and protected.</p>
+        <p *ngIf="!auth.isConfigured" class="config-warning">Firebase Authentication is not configured. Check the Firebase web app settings in src/environments/environment.ts.</p>
+        <p *ngIf="auth.initializationError" class="auth-error" role="alert">{{ auth.initializationError }}</p>
+        <div *ngIf="authError" class="auth-error" role="alert">
+          <p>{{ authError }}</p>
+          <button *ngIf="authMode === 'login' && authErrorCode === 'auth/invalid-credential'" type="button" class="auth-recovery-button" (click)="sendPasswordReset()" [disabled]="sendingPasswordReset">
+            {{ sendingPasswordReset ? 'Sending reset email…' : 'Send password reset email' }}
+          </button>
+        </div>
+        <form class="login-form" (ngSubmit)="authenticate()">
+          <label *ngIf="authMode === 'register'">Full name<input name="fullName" [(ngModel)]="fullName" required maxlength="120" autocomplete="name" placeholder="Your name"></label>
+          <label>Email address<input name="email" type="email" [(ngModel)]="email" required autocomplete="email" placeholder="you@example.com"></label>
+          <label>Password
+            <span class="password-input"><input name="password" [type]="passwordVisible ? 'text' : 'password'" [(ngModel)]="password" required [minlength]="authMode === 'register' ? 8 : 1" [autocomplete]="authMode === 'login' ? 'current-password' : 'new-password'" placeholder="Enter your password"><button type="button" class="password-eye" [attr.aria-label]="passwordVisible ? 'Hide password' : 'Show password'" (click)="passwordVisible = !passwordVisible">{{ passwordVisible ? 'Hide' : 'Show' }}</button></span>
+          </label>
+          <ng-container *ngIf="authMode === 'register'">
+            <label>Confirm password<input name="confirmPassword" [type]="passwordVisible ? 'text' : 'password'" [(ngModel)]="confirmPassword" required minlength="8" autocomplete="new-password" placeholder="Confirm your password"></label>
+            <label>Phone number (optional)<input name="phoneNumber" type="tel" [(ngModel)]="phoneNumber" autocomplete="tel" placeholder="Phone number"></label>
+            <label>Emergency contact name (optional)<input name="emergencyContactName" [(ngModel)]="emergencyContactName" placeholder="Trusted contact"></label>
+            <label>Emergency contact number (optional)<input name="emergencyContactNumber" type="tel" [(ngModel)]="emergencyContactNumber" placeholder="Trusted contact number"></label>
+            <label class="privacy-check"><input name="privacyAccepted" type="checkbox" [(ngModel)]="privacyAccepted"> I agree to the ResQ-It privacy notice.</label>
+          </ng-container>
+          <button class="login-submit" type="submit" [disabled]="!auth.isConfigured || authenticating">
+            <ion-spinner *ngIf="authenticating" name="crescent"></ion-spinner>
+            {{ authenticating ? 'Please wait…' : authMode === 'login' ? 'Sign in' : 'Create account' }}
+          </button>
+        </form>
+        <button *ngIf="authMode === 'login'" type="button" class="login-secondary" (click)="sendPasswordReset()" [disabled]="sendingPasswordReset">Forgot your password?</button>
+        <button type="button" class="login-secondary guest-directory-link" (click)="enterGuestMode()">Browse emergency hotlines without signing in</button>
+        <div class="login-divider"><span></span><small>OR</small><span></span></div>
+        <button class="login-secondary switch-auth" (click)="authMode = authMode === 'login' ? 'register' : 'login'; authError = ''; authErrorCode = ''">
+          {{ authMode === 'login' ? 'Create a new account' : 'Already have an account? Sign in' }}
+        </button>
+        <p class="login-security"><ion-icon name="shield-checkmark-outline"></ion-icon> Account secured by Firebase Authentication</p>
+      </div>
+      <p class="auth-gate-footer">Find Help. Locate Safety. Act Fast.</p>
+    </section>
+    <ng-container *ngIf="auth.currentUser || guestMode">
+  <ion-header class="app-header">
+    <ion-toolbar>
+      <div class="brand" slot="start">
+        <span class="brand-mark"><ion-icon name="shield-checkmark-outline"></ion-icon></span>
+        <span>ResQ-It</span>
+      </div>
+      <ion-button *ngIf="auth.currentUser" fill="clear" class="profile-action" slot="end" (click)="openProfile()">
+        <ion-icon name="person-circle-outline" slot="start"></ion-icon>
+        {{ auth.currentUser.fullName || 'Profile' }}
+      </ion-button>
+      <ion-button *ngIf="guestMode" fill="clear" class="profile-action" slot="end" (click)="exitGuestMode()">Sign in</ion-button>
+    </ion-toolbar>
+  </ion-header>
+
+  <ion-content [fullscreen]="true" class="main-content">
+    <main class="page-wrap">
+      <aside *ngIf="guestMode" class="guest-directory-banner" role="status">
+        <span>Public emergency directory. Private reports, profile, and suggestions require an account.</span>
+        <button type="button" (click)="exitGuestMode()">Sign in</button>
+      </aside>
+      <aside *ngIf="connectionMessage" class="connection-banner" role="status" aria-live="polite">
+        <span>{{ connectionMessage }}</span>
+        <button type="button" (click)="retryCurrentPage()">Retry</button>
+      </aside>
+      <aside *ngIf="isExpectedAdminAccount && !isVerifiedAdmin" class="admin-error" role="alert">
+        <strong>Admin account found, but Firebase admin claim is missing.</strong>
+        <p>The role field in the Firestore user profile does not grant admin access. The existing account must receive the <code>admin: true</code> custom claim using trusted Firebase Admin credentials.</p>
+        <p>Signed-in UID: <code class="admin-uid">{{ firebase.currentUser?.uid }}</code><br>Target admin UID: <code class="admin-uid">{{ designatedAdminUid }}</code>. Copy the command rather than retyping it; lowercase <code>l</code> and digit <code>1</code> are different characters.</p>
+        <p>Run this exact command from the <code>backend</code> folder after configuring <code>FIREBASE_PROJECT_ID=resq-it</code> and Google Application Default Credentials. Firebase CLI login alone does not provide these credentials. The account needs permission to set Firebase Authentication custom claims.</p>
+        <code class="admin-command">{{ adminGrantCommand }}</code>
+        <div class="admin-form-actions">
+          <ion-button type="button" size="small" fill="outline" (click)="copyAdminGrantCommand()">Copy exact command</ion-button>
+          <ion-button type="button" size="small" (click)="refreshAdministratorAccess()" [disabled]="refreshingAdminAccess">{{ refreshingAdminAccess ? 'Checking…' : 'I granted the claim — check again' }}</ion-button>
+        </div>
+      </aside>
+      <section *ngIf="activeTab === 'home' && !guestMode" class="home-page">
+        <div class="welcome-row">
+          <div>
+            <p class="eyebrow">{{ currentYear }} · EMERGENCY ASSISTANCE</p>
+            <h1>Hello{{ auth.currentUser?.fullName ? ', ' + auth.currentUser?.fullName : ' there' }}.</h1>
+            <p class="subtitle">Find trusted help and nearby facilities when you need them.</p>
+          </div>
+          <span class="status-chip"><span class="status-dot"></span> Ready to help</span>
+        </div>
+
+        <div class="urgent-banner">
+          <div class="urgent-copy">
+            <span class="urgent-kicker">NEED URGENT HELP?</span>
+            <h2>Find nearby emergency support</h2>
+            <p>Choose what is happening to discover mapped facilities near you.</p>
+            <ion-button class="urgent-button" (click)="activeCategory = 'medical'; openNearbyEmergency()">
+              <ion-icon name="alert-circle-outline" slot="start"></ion-icon>
+              NEARBY EMERGENCY
+            </ion-button>
+          </div>
+          <div class="urgent-emblem"><ion-icon name="heart-outline"></ion-icon></div>
+        </div>
+
+        <section class="section-block">
+          <div class="section-heading">
+            <div><p class="eyebrow">QUICK ACCESS</p><h2>What do you need?</h2></div>
+            <button class="text-link" (click)="activeTab = 'help'">See all <span aria-hidden="true">→</span></button>
+          </div>
+          <div class="category-grid">
+            <button *ngFor="let category of categories.slice(0, 4)" class="category-card"
+              (click)="chooseCategory(category.id)">
+              <span class="category-icon"><ion-icon [name]="category.icon"></ion-icon></span>
+              <strong>{{ category.title }}</strong>
+              <small>{{ category.description }}</small>
+            </button>
+          </div>
+        </section>
+
+        <button class="guide-shortcut" (click)="openGuides()">
+          <span class="category-icon"><ion-icon name="document-text-outline"></ion-icon></span>
+          <span><strong>Emergency guides</strong><small>Read safety information reviewed against official sources.</small></span>
+          <span class="arrow">→</span>
+        </button>
+
+        <section class="section-block split-sections">
+          <div class="location-card">
+            <div class="small-icon"><ion-icon name="locate-outline"></ion-icon></div>
+            <div><strong>Your location</strong><p>{{ locationMessage }}</p></div>
+            <ion-button fill="clear" size="small" (click)="openNearbyEmergency()">Update</ion-button>
+          </div>
+          <div class="notice-card">
+            <ion-icon name="shield-checkmark-outline"></ion-icon>
+            <p><strong>For immediate danger</strong><br>Call your local official emergency service directly. ResQ-It does not dispatch responders.</p>
+          </div>
+        </section>
+        <p class="attribution">Facility data &copy; OpenStreetMap contributors. Details may be incomplete; please verify before travelling.</p>
+      </section>
+
+      <section *ngIf="activeTab === 'help' && !guestMode" class="sub-page">
+        <button class="back-link" (click)="leaveNearbyEmergency()">← Back to home</button>
+        <p class="eyebrow">EMERGENCY ASSISTANCE</p>
+        <h1>What kind of help do you need?</h1>
+        <p class="subtitle">Select a situation to find relevant nearby facilities. This app does not automatically contact emergency services.</p>
+        <div class="help-grid">
+          <button *ngFor="let category of categories" class="help-option" (click)="chooseCategory(category.id)">
+            <span class="help-icon"><ion-icon [name]="category.icon"></ion-icon></span>
+            <span><strong>{{ category.title }}</strong><small>{{ category.description }}</small></span>
+            <span class="arrow">→</span>
+          </button>
+        </div>
+        <div class="safety-notice"><ion-icon name="alert-circle-outline"></ion-icon>
+          <span>If someone is in immediate danger, contact the appropriate official emergency service now.</span>
+        </div>
+      </section>
+
+      <section [hidden]="activeTab !== 'map'" class="sub-page">
+        <button class="back-link" (click)="leaveNearbyEmergency()">{{ guestMode ? '← Back to directory' : '← Back to home' }}</button>
+        <div class="section-heading map-heading">
+          <div><p class="eyebrow">NEARBY EMERGENCY FACILITIES</p><h1>{{ activeCategory | titlecase }} facilities</h1></div>
+          <ion-button fill="outline" class="refresh-button" (click)="refreshCurrentLocation()" [disabled]="loading">
+            <ion-icon name="locate-outline" slot="start"></ion-icon> Use current location
+          </ion-button>
+        </div>
+        <div class="search-row">
+          <ion-item class="search-field" lines="none">
+            <ion-icon name="search-outline" slot="start"></ion-icon>
+            <ion-input id="facility-area-search" name="facilityAreaSearch" [(ngModel)]="searchText" placeholder="Search by town or address"
+              (keyup.enter)="searchPlace()" aria-label="Search by town or address"></ion-input>
+          </ion-item>
+          <ion-button class="search-button" (click)="searchPlace()" [disabled]="placeSearchLoading">Search area</ion-button>
+        </div>
+        <div class="facility-filters" aria-label="Filter emergency facilities">
+          <button type="button" *ngFor="let category of ['medical','fire','police','accident']"
+            [class.selected]="activeCategory === category" (click)="chooseCategory($any(category))">
+            {{ category === 'accident' ? 'Accident / Rescue' : (category | titlecase) }}
+          </button>
+        </div>
+        <label class="municipality-fallback">Use current GPS location or search by municipality
+          <select id="facility-municipality" name="facilityMunicipalitySearch" [value]="selectedMunicipality" (change)="selectMunicipality($any($event.target).value)">
+            <option value="">Use current GPS location</option>
+            <option *ngFor="let municipality of municipalityNames" [value]="municipality">{{ municipality }}</option>
+          </select>
+        </label>
+        <p class="location-note"><ion-icon name="locate-outline"></ion-icon>{{ locationMessage }} · {{ location ? 'Closest facilities first.' : 'Verified contacts are shown without distance sorting.' }}</p>
+        <p *ngIf="routeSummary" class="route-summary">{{ routeSummary }}</p>
+        <div class="map-layout">
+          <div class="map-frame"><div id="facility-map" role="application" aria-label="Map of nearby facilities"></div>
+            <article *ngIf="selectedFacility as facility" class="facility-details" aria-live="polite" aria-label="Selected facility details">
+              <button type="button" class="facility-details-close" aria-label="Close facility details" (click)="selectedFacility = null">×</button>
+              <p class="eyebrow">EMERGENCY FACILITY</p>
+              <h2>{{ facility.name }}</h2>
+              <p class="facility-details-meta">{{ facilityCategoryLabel(facility) }} · <ng-container *ngIf="facility.distanceKm !== undefined; else distanceMissing">{{ facility.distanceKm | number:'1.1-1' }} km away</ng-container><ng-template #distanceMissing>Distance unavailable</ng-template></p>
+              <p class="facility-details-address">{{ facility.address || facility.municipality + ', ' + facility.region }}</p>
+              <div class="facility-phone">
+                <strong>Phone</strong>
+                <ng-container *ngIf="facilityPhoneLink(facility.phone) as phoneLink; else phoneUnavailable">
+                  <a class="facility-phone-call" [href]="phoneLink">{{ facility.phone }}</a>
+                </ng-container>
+                <ng-template #phoneUnavailable>
+                  <span *ngIf="facility.phone; else noFacilityPhone">{{ facility.phone }} · Invalid phone number</span>
+                  <ng-template #noFacilityPhone><span>Contact number unavailable</span></ng-template>
+                </ng-template>
+              </div>
+              <p *ngIf="facility.phone && !facility.phoneVerified" class="contact-unavailable">This number is unverified. Confirm the contact before calling or texting.</p>
+              <p *ngIf="facility.alternativePhone?.length">Alternative: <ng-container *ngFor="let phone of facility.alternativePhone; let last = last"><a *ngIf="facilityPhoneLink(phone) as phoneLink" [href]="phoneLink">{{ phone }}</a><span *ngIf="!facilityPhoneLink(phone)">{{ phone }} · Invalid phone number</span><span *ngIf="!last"> · </span></ng-container></p>
+              <p *ngIf="facility.openingHours" class="facility-details-address">Hours: {{ facility.openingHours }}</p>
+              <div class="secondary-contact-actions">
+                <a *ngIf="verifiedFacilityEmailLink(facility) as emailLink" [href]="emailLink">Email</a>
+                <a *ngIf="verifiedFacilityContactLink(facility, 'facebook') as facebookLink" [href]="facebookLink" target="_blank" rel="noopener noreferrer">Facebook</a>
+                <a *ngIf="verifiedFacilityContactLink(facility, 'website') as websiteLink" [href]="websiteLink" target="_blank" rel="noopener noreferrer">Website</a>
+              </div>
+              <div class="facility-details-actions">
+                <button *ngIf="facilityPhoneLink(facility.phone)" type="button" class="facility-call-button" (click)="openPhoneDialer(facility.phone)">
+                  <ion-icon name="call-outline"></ion-icon> Call Now
+                </button>
+                <button *ngIf="facilitySmsLink(facility.phone)" type="button" class="facility-call-button" (click)="openSmsComposer(facility.phone)">
+                  SMS
+                </button>
+                <a class="facility-directions-button" [href]="facilityDirectionsUrl(facility)" target="_blank" rel="noopener noreferrer">
+                  <ion-icon name="navigate-outline"></ion-icon> Get Directions
+                </a>
+                <button type="button" class="facility-route-button" (click)="routeToFacility(facility)">Route on map</button>
+              </div>
+            </article>
+            <div class="map-empty" *ngIf="!location"><ion-icon name="map-outline"></ion-icon><p>Verified contacts are shown without GPS. Enable location to sort by distance, or choose a municipality.</p><ion-button size="small" (click)="findFacilities()">Use my location</ion-button></div>
+          </div>
+          <div class="results-panel">
+            <div class="results-title"><strong>Facilities · active and verified first{{ location ? ', then nearest' : '' }}</strong><ion-badge color="light">{{ facilities.length }}</ion-badge></div>
+            <p *ngIf="locationSource === 'municipality'" class="location-note">Approximate municipality-center results; live GPS is not being used.</p>
+            <div *ngIf="loading" class="loading-state"><ion-spinner name="crescent"></ion-spinner><span>Finding {{ isDirectoryTestingMode ? 'directory records' : 'verified facilities' }}…</span></div>
+            <p *ngIf="isShowingTestingDirectoryWarning" class="testing-directory-banner">LOCAL TESTING DIRECTORY — Numbers are unverified and may be outdated. Tap Call or SMS to open your device app; confirm the destination before proceeding.</p>
+            <p *ngIf="hasActiveUnverifiedMapContacts && !isShowingTestingDirectoryWarning" class="testing-directory-banner">Some numbers are not independently verified. You can still open the phone or messaging app; confirm the destination before proceeding.</p>
+            <p *ngIf="loading && facilities.length" class="location-note">Refreshing this search. Previously loaded results remain visible until the refresh completes.</p>
+            <div *ngIf="errorMessage && !loading" class="error-state"><ion-icon name="alert-circle-outline"></ion-icon><p>{{ errorMessage }}<br><small *ngIf="facilities.length">Showing previously loaded verified results; they may be outdated.</small></p><ion-button size="small" fill="clear" (click)="findFacilities()">Try again</ion-button></div>
+            <ion-list *ngIf="facilities.length" lines="none">
+              <ion-item *ngFor="let facility of facilities" button detail="false" (click)="openFacility(facility)" class="facility-row">
+                <span class="facility-symbol" slot="start">{{ facility.type === 'hospital' || facility.type === 'clinic' ? '+' : facility.type === 'police' ? 'P' : facility.type === 'fire_station' ? 'F' : '•' }}</span>
+                <ion-label>
+                  <strong>{{ facility.name }}</strong>
+                  <p>{{ facilityCategoryLabel(facility) }}</p>
+                  <span class="directory-badges">
+                    <ion-badge color="warning">{{ facility.verificationStatus === 'verified' ? 'VERIFIED' : 'UNVERIFIED' }}</ion-badge>
+                    <ion-badge color="medium">{{ facility.isActive ? 'ACTIVE' : 'INACTIVE' }}</ion-badge>
+                    <ion-badge color="medium">{{ facility.phoneVerified ? 'PHONE VERIFIED' : 'PHONE UNVERIFIED' }}</ion-badge>
+                  </span>
+                  <small *ngIf="isVerifiedAdmin">Admin status: {{ facility.verificationStatus || 'unverified' }} · {{ facility.isActive ? 'Active' : 'Inactive' }}</small>
+                  <small *ngIf="facility.distanceKm !== undefined; else noDistance">Distance: {{ facility.distanceKm | number:'1.1-1' }} km</small><ng-template #noDistance><small>Distance unavailable</small></ng-template>
+                  <small>Location: {{ facility.address || (facility.municipality + ', ' + facility.region) }}</small>
+                  <small *ngIf="facility.openingHours">Hours: {{ facility.openingHours }}</small>
+                  <button *ngIf="facilityPhoneLink(facility.phone)" type="button" class="facility-row-phone" (click)="$event.stopPropagation(); openPhoneDialer(facility.phone)">
+                    <ion-icon name="call-outline"></ion-icon> {{ facility.phone }} · Call Now
+                  </button>
+                  <button *ngIf="facilitySmsLink(facility.phone)" type="button" class="facility-row-phone" (click)="$event.stopPropagation(); openSmsComposer(facility.phone)">SMS {{ facility.phone }}</button>
+                  <small *ngIf="!facilityPhoneLink(facility.phone)">{{ facility.phone ? facility.phone + ' · Invalid phone number' : 'Contact number unavailable' }}</small>
+                  <ng-container *ngFor="let phone of facility.alternativePhone ?? []">
+                    <button *ngIf="facilityPhoneLink(phone)" type="button" class="facility-row-phone" (click)="$event.stopPropagation(); openPhoneDialer(phone)">Call {{ phone }}</button>
+                    <button *ngIf="facilitySmsLink(phone)" type="button" class="facility-row-phone" (click)="$event.stopPropagation(); openSmsComposer(phone)">SMS {{ phone }}</button>
+                  </ng-container>
+                  <a *ngIf="verifiedFacilityEmailLink(facility) as emailLink" [href]="emailLink" (click)="$event.stopPropagation()">Verified email</a>
+                  <a *ngIf="verifiedFacilityContactLink(facility, 'facebook') as facebookLink" [href]="facebookLink" target="_blank" rel="noopener noreferrer" (click)="$event.stopPropagation()">Facebook page</a>
+                  <a *ngIf="verifiedFacilityContactLink(facility, 'website') as websiteLink" [href]="websiteLink" target="_blank" rel="noopener noreferrer" (click)="$event.stopPropagation()">Website</a>
+                </ion-label>
+              </ion-item>
+            </ion-list>
+            <p *ngIf="!loading && !errorMessage && !facilities.length" class="admin-empty">No {{ isShowingTestingDirectoryWarning ? 'directory' : 'verified' }} facilities are available in this search. Check another category or municipality.</p>
+            <section class="map-hotlines" aria-label="Oriental Mindoro emergency hotlines">
+              <div class="map-hotlines-heading"><strong>{{ isVerifiedAdmin ? 'Emergency contacts · Admin preview' : 'Oriental Mindoro hotlines' }}</strong><button type="button" (click)="openHotlines()">View all</button></div>
+              <p *ngIf="nearbyHotlinesLoading" class="map-hotlines-note">Loading nearby directory records…</p>
+              <p *ngIf="nearbyHotlinesError && !nearbyHotlinesLoading" class="map-hotlines-note hotline-load-error">{{ nearbyHotlinesError }}</p>
+              <p *ngIf="!nearbyHotlinesLoading && !nearbyHotlinesError && !nearbyEmergencyHotlines.length" class="map-hotlines-note">{{ isVerifiedAdmin ? 'No matching emergency facility records were found for this category and area.' : 'No ' + activeCategory + ' contact has been published for Oriental Mindoro yet.' }}</p>
+              <article *ngFor="let hotline of nearbyEmergencyHotlines" class="map-hotline-row">
+                <span><strong>{{ hotline.name }}</strong><small>{{ hotline.region }} · {{ hotline.category | titlecase }}</small></span>
+                <button *ngIf="facilityPhoneLink(hotline.phoneNumber)" type="button" class="map-hotline-call" (click)="openPhoneDialer(hotline.phoneNumber)">
+                  <ion-icon name="call-outline"></ion-icon>Call Now · {{ hotline.phoneNumber }}
+                </button>
+                <button *ngIf="facilitySmsLink(hotline.phoneNumber)" type="button" class="map-hotline-call" (click)="openSmsComposer(hotline.phoneNumber)">SMS · {{ hotline.phoneNumber }}</button>
+                <ng-container *ngFor="let phone of hotline.alternativePhone ?? []">
+                <button *ngIf="facilityPhoneLink(phone)" type="button" class="map-hotline-call" (click)="openPhoneDialer(phone)">
+                  <ion-icon name="call-outline"></ion-icon>{{ phone }}
+                </button>
+                <button *ngIf="facilitySmsLink(phone)" type="button" class="map-hotline-call" (click)="openSmsComposer(phone)">SMS · {{ phone }}</button>
+                </ng-container>
+                <small *ngIf="!facilityPhoneLink(hotline.phoneNumber) && !hotline.alternativePhone?.length" class="contact-unavailable">{{ hotline.phoneNumber ? 'Invalid phone number' : 'No phone number is listed' }}</small>
+              </article>
+            </section>
+            <p class="data-disclaimer">Numbers on visible listings open your phone or SMS app when tapped. Unverified numbers may be inaccurate; confirm the destination before proceeding.</p>
+          </div>
+        </div>
+      </section>
+
+      <section *ngIf="activeTab === 'hotlines'" class="sub-page">
+        <button class="back-link" (click)="leaveHotlines()">{{ guestMode ? '← Open map' : '← Back to home' }}</button>
+        <p class="eyebrow">DIRECTORY</p><h1>Emergency hotlines</h1>
+        <p class="subtitle">Emergency numbers vary by country and region. Verify the right number with official local sources.</p>
+        <p *ngIf="guestMode && !isShowingTestingDirectoryWarning" class="subtitle">Showing active records and administrator-published review contacts from Firebase. Tap a number to open your phone or messaging app; unverified contacts may be inaccurate.</p>
+        <p *ngIf="guestMode && isShowingTestingDirectoryWarning" class="subtitle">Local development preview from your supplied CSV because the Firebase directory has no active records. Numbers can open your phone or messaging app, but have not been independently verified.</p>
+        <aside *ngIf="isShowingTestingDirectoryWarning" class="testing-directory-banner" role="status">
+          LOCAL TESTING DIRECTORY — Showing your supplied CSV data because Firebase has no active records. Tap Call or SMS to open your device app. Verify the number and destination before proceeding.
+        </aside>
+        <div class="hotline-filters">
+          <ion-item class="search-field" lines="none"><ion-icon name="search-outline" slot="start"></ion-icon><ion-input id="hotline-search" name="hotlineSearch" [ngModel]="hotlineSearchText" (ngModelChange)="onHotlineSearchChange($event)" placeholder="Search name, region or country" aria-label="Search hotlines"></ion-input></ion-item>
+          <select id="hotline-category-filter" name="hotlineCategoryFilter" aria-label="Filter hotlines by category" [(ngModel)]="hotlineCategoryFilter"><option value="all">All categories</option><option *ngFor="let category of emergencyCategories" [value]="category">{{ category | titlecase }}</option></select>
+          <select id="hotline-municipality-filter" name="hotlineMunicipalityFilter" aria-label="Filter hotlines by municipality" [(ngModel)]="hotlineMunicipalityFilter"><option value="all">All municipalities</option><option *ngFor="let municipality of publicHotlineMunicipalities" [value]="municipality">{{ municipality }}</option></select>
+          <ion-button fill="outline" (click)="openHotlines(true)" [disabled]="hotlinesLoading">Refresh directory</ion-button>
+        </div>
+        <div *ngIf="hotlinesLoading" class="loading-state"><ion-spinner name="crescent"></ion-spinner><span>Loading local directory…</span></div>
+        <div *ngIf="!hotlinesLoading && hotlinesError" class="notice-card hotline-placeholder"><ion-icon name="call-outline"></ion-icon><div><p><strong>{{ hotlinesError }}</strong><br>The directory reads from <code>emergencyHotlines</code>.</p><ion-button size="small" fill="outline" (click)="openHotlines(true)">Try again</ion-button><ion-button *ngIf="isVerifiedAdmin" size="small" fill="clear" (click)="openAdmin()">Review directory</ion-button></div></div>
+        <div *ngIf="!hotlinesLoading && !hotlinesError && !hotlines.length" class="empty-card">
+          <ion-icon name="call-outline"></ion-icon>
+          <h2>{{ isShowingTestingDirectoryWarning ? 'No directory records found' : 'No public records yet' }}</h2>
+          <p *ngIf="!isShowingTestingDirectoryWarning">No active or administrator-published records are available in <code>emergencyHotlines</code>.</p>
+          <p *ngIf="isShowingTestingDirectoryWarning">No records were returned from <code>emergencyHotlines</code> or the local legacy preview. Check the Firebase connection and Firestore read permissions.</p>
+        </div>
+        <p *ngIf="!hotlinesLoading && hotlines.length && !filteredHotlines.length" class="admin-empty">No hotline matches that search or filter.</p>
+        <div class="hotline-list" *ngIf="filteredHotlines.length">
+          <article class="hotline-card" *ngFor="let hotline of filteredHotlines">
+            <div class="hotline-card-icon"><ion-icon name="call-outline"></ion-icon></div>
+            <div class="hotline-info"><strong>{{ hotline.name }}</strong><p>{{ hotline.category | titlecase }}<span *ngIf="hotline.type"> · {{ hotline.type }}</span><span *ngIf="hotline.municipality"> · {{ hotline.municipality }}</span><span *ngIf="hotline.region"> · {{ hotline.region }}</span></p>
+              <p *ngIf="hotline.address">{{ hotline.address }}</p>
+              <p *ngIf="hotline.phoneNumber">Phone: <a *ngIf="facilityPhoneLink(hotline.phoneNumber) as phoneLink; else invalidHotlinePhone" [href]="phoneLink">{{ hotline.phoneNumber }}</a><ng-template #invalidHotlinePhone>{{ hotline.phoneNumber }} · Invalid phone number</ng-template></p>
+              <p *ngIf="hotline.alternativePhone?.length">Alternative: <ng-container *ngFor="let phone of hotline.alternativePhone; let last = last"><a *ngIf="facilityPhoneLink(phone) as phoneLink" [href]="phoneLink">{{ phone }}</a><span *ngIf="!facilityPhoneLink(phone)">{{ phone }} · Invalid phone number</span><span *ngIf="!last"> · </span></ng-container></p>
+              <p *ngIf="hotline.latitude !== undefined && hotline.longitude !== undefined">Coordinates: {{ hotline.latitude }}, {{ hotline.longitude }}</p>
+              <p *ngIf="hotline.openingHours">Hours: {{ hotline.openingHours }}</p>
+              <p *ngIf="hotline.description">{{ hotline.description }}</p>
+              <a *ngIf="hotline.officialSourceUrl" [href]="hotline.officialSourceUrl" target="_blank" rel="noopener noreferrer">Official source ↗</a>
+              <span class="directory-badges">
+                <ion-badge [color]="hotline.verificationStatus === 'verified' ? 'success' : 'warning'">{{ hotline.verificationStatus === 'verified' ? 'VERIFIED' : 'UNVERIFIED' }}</ion-badge>
+                <ion-badge [color]="hotline.isActive ? 'success' : 'medium'">{{ hotline.isActive ? 'ACTIVE' : 'INACTIVE' }}</ion-badge>
+                <ion-badge [color]="hotline.phoneVerified ? 'success' : 'medium'">{{ hotline.phoneVerified ? 'PHONE VERIFIED' : 'PHONE UNVERIFIED' }}</ion-badge>
+              </span>
+              <p *ngIf="(hotline.phoneNumber || hotline.alternativePhone?.length) && (!hotline.phoneVerified || hotline.verificationStatus !== 'verified' || !hotline.isActive)" class="contact-unavailable">This contact is not independently verified. Confirm the number and destination before calling or texting.</p>
+              <div class="secondary-contact-actions">
+                <a *ngIf="verifiedHotlineEmailLink(hotline) as emailLink" [href]="emailLink">Email</a>
+                <a *ngIf="verifiedHotlineContactLink(hotline, 'facebook') as facebookLink" [href]="facebookLink" target="_blank" rel="noopener noreferrer">Facebook</a>
+                <a *ngIf="verifiedHotlineContactLink(hotline, 'website') as websiteLink" [href]="websiteLink" target="_blank" rel="noopener noreferrer">Website</a>
+              </div>
+            </div>
+            <ion-button *ngIf="facilityPhoneLink(hotline.phoneNumber)" class="hotline-call-action" (click)="openPhoneDialer(hotline.phoneNumber)">
+              <ion-icon name="call-outline" slot="start"></ion-icon>Call Now · {{ hotline.phoneNumber }}
+            </ion-button>
+            <ion-button *ngIf="facilitySmsLink(hotline.phoneNumber)" fill="outline" (click)="openSmsComposer(hotline.phoneNumber)">Open SMS · {{ hotline.phoneNumber }}</ion-button>
+            <ng-container *ngFor="let phone of hotline.alternativePhone ?? []">
+            <ion-button *ngIf="facilityPhoneLink(phone)" fill="outline" (click)="openPhoneDialer(phone)">
+              <ion-icon name="call-outline" slot="start"></ion-icon>{{ phone }}
+            </ion-button>
+            <ion-button *ngIf="facilitySmsLink(phone)" fill="outline" (click)="openSmsComposer(phone)">SMS {{ phone }}</ion-button>
+            </ng-container>
+            <small *ngIf="!facilityPhoneLink(hotline.phoneNumber) && !hotline.alternativePhone?.length" class="contact-unavailable">{{ hotline.phoneNumber ? 'Invalid phone number' : 'No phone number is listed' }}</small>
+          </article>
+        </div>
+      </section>
+
+      <section *ngIf="activeTab === 'guides' && !guestMode" class="sub-page">
+        <button class="back-link" (click)="activeTab = 'home'">← Back to home</button>
+        <div class="section-heading"><div><p class="eyebrow">REVIEWED INFORMATION</p><h1>Emergency guides</h1></div><ion-button fill="outline" (click)="openGuides(true)" [disabled]="guidesLoading">Refresh guides</ion-button></div>
+        <p class="subtitle">Guides are app information, not a substitute for official emergency advice. If in immediate danger, contact local emergency services directly.</p>
+        <div *ngIf="guidesLoading" class="loading-state"><ion-spinner name="crescent"></ion-spinner><span>Loading reviewed guides…</span></div>
+        <div *ngIf="!guidesLoading && guidesError" class="notice-card hotline-placeholder"><ion-icon name="document-text-outline"></ion-icon><div><p><strong>{{ guidesError }}</strong><br>Guidance is displayed only after an administrator publishes it with an official source.<span *ngIf="guidesDataLoaded"> The previously loaded guides remain visible and may be outdated.</span></p><ion-button size="small" fill="outline" (click)="openGuides(true)">Try again</ion-button></div></div>
+        <div class="guide-list" *ngIf="publicGuides.length">
+          <article class="guide-card" *ngFor="let guide of publicGuides">
+            <span class="eyebrow">{{ guide.category | titlecase }}</span>
+            <h2>{{ guide.title }}</h2><p class="guide-summary">{{ guide.summary }}</p>
+            <div class="guide-instructions">{{ guide.instructions }}</div>
+            <a [href]="guide.sourceUrl" target="_blank" rel="noopener noreferrer">Read official source ↗</a>
+          </article>
+        </div>
+      </section>
+
+      <section *ngIf="activeTab === 'reports' && !guestMode" class="sub-page">
+        <button class="back-link" (click)="activeTab = 'home'">← Back to home</button>
+        <div class="section-heading"><div><p class="eyebrow">PRIVATE ACCOUNT FEATURE</p><h1>My reports</h1></div><ion-button fill="outline" (click)="openReports(true)" [disabled]="reportsLoading || !auth.currentUser">Refresh reports</ion-button></div>
+        <p class="subtitle">Reports you choose to save are private to your account. They are records in this app and are not sent to emergency responders.</p>
+        <div class="empty-card" *ngIf="!auth.currentUser"><ion-icon name="document-text-outline"></ion-icon><h2>Sign in to save report history</h2><p>For urgent help, contact local emergency services directly.</p><ion-button (click)="openProfile(); showAuth = true">Sign in</ion-button></div>
+        <div *ngIf="auth.currentUser && reportsLoading" class="loading-state"><ion-spinner name="crescent"></ion-spinner><span>Loading your reports…</span></div>
+        <div *ngIf="auth.currentUser && !reportsLoading && reportsError" class="notice-card hotline-placeholder"><ion-icon name="document-text-outline"></ion-icon><div><p><strong>{{ reportsError }}</strong><span *ngIf="reportsDataLoaded"> Previously loaded report data remains visible.</span></p><ion-button size="small" fill="outline" (click)="openReports(true)">Try again</ion-button></div></div>
+        <div class="empty-card" *ngIf="auth.currentUser && !reportsLoading && !reports.length && (reportsDataLoaded || !reportsError)"><ion-icon name="document-text-outline"></ion-icon><h2>Your private report history</h2><p>{{ reportsError || 'No reports have been saved.' }}</p><ion-button (click)="submitReport()">Save a report</ion-button></div>
+        <div class="report-list" *ngIf="reports.length">
+          <article class="report-card" *ngFor="let report of reports">
+            <div><span class="eyebrow">REF {{ report.reportId }}</span><h2>{{ report.category | titlecase }}</h2>
+              <p>{{ report.description || 'No description provided' }}</p>
+              <small>{{ report.createdAt | date:'medium' }} · {{ report.status }}</small>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section *ngIf="activeTab === 'profile' && !guestMode" class="sub-page profile-page">
+        <div class="section-heading profile-page-heading">
+          <div><p class="eyebrow">YOUR ACCOUNT</p><h1>Account settings</h1><p class="subtitle">Manage your profile, security, and facility suggestions.</p></div>
+          <ion-button *ngIf="auth.currentUser" fill="outline" (click)="openProfile(true)" [disabled]="profileLoading || profileSaving">
+            <ion-icon name="refresh-outline" slot="start"></ion-icon>{{ profileLoading ? 'Refreshing…' : 'Refresh profile' }}
+          </ion-button>
+        </div>
+        <div *ngIf="!auth.currentUser" class="auth-card">
+          <div class="auth-switch"><button [class.selected]="authMode === 'login'" (click)="authMode = 'login'">Sign in</button><button [class.selected]="authMode === 'register'" (click)="authMode = 'register'">Create account</button></div>
+          <p *ngIf="!auth.isConfigured" class="config-warning">Firebase Authentication is not configured. Check the Firebase web app settings in src/environments/environment.ts.</p>
+          <p *ngIf="authError" class="auth-error" role="alert">{{ authError }}</p>
+          <form (ngSubmit)="authenticate()">
+            <label *ngIf="authMode === 'register'">Full name<ion-input name="fullName" [(ngModel)]="fullName" required autocomplete="name" placeholder="Your name"></ion-input></label>
+            <label>Email address<ion-input name="email" type="email" [(ngModel)]="email" required autocomplete="email" placeholder="you@example.com"></ion-input></label>
+            <label>Password<ion-input name="password" [type]="passwordVisible ? 'text' : 'password'" [(ngModel)]="password" required minlength="8" [autocomplete]="authMode === 'login' ? 'current-password' : 'new-password'" placeholder="At least 8 characters"></ion-input><button class="text-link password-toggle" type="button" (click)="passwordVisible = !passwordVisible">{{ passwordVisible ? 'Hide password' : 'Show password' }}</button></label>
+            <label *ngIf="authMode === 'register'">Confirm password<ion-input name="confirmPassword" [type]="passwordVisible ? 'text' : 'password'" [(ngModel)]="confirmPassword" required autocomplete="new-password" placeholder="Re-enter your password"></ion-input></label>
+            <ng-container *ngIf="authMode === 'register'">
+              <label>Phone number (optional)<ion-input name="phoneNumber" type="tel" [(ngModel)]="phoneNumber" autocomplete="tel" placeholder="Your contact number"></ion-input></label>
+              <label>Emergency contact name (optional)<ion-input name="emergencyContactName" [(ngModel)]="emergencyContactName" autocomplete="name" placeholder="Trusted contact"></ion-input></label>
+              <label>Emergency contact number (optional)<ion-input name="emergencyContactNumber" type="tel" [(ngModel)]="emergencyContactNumber" autocomplete="tel" placeholder="Trusted contact's number"></ion-input></label>
+              <label class="privacy-check"><input name="privacyAccepted" type="checkbox" [(ngModel)]="privacyAccepted"> I agree to the <a href="#privacy-notice" (click)="$event.preventDefault(); showMessage('ResQ-It stores only account details you submit and private reports saved to your account. Location is requested only for a nearby search.')">privacy notice</a>.</label>
+            </ng-container>
+            <ion-button expand="block" type="submit" [disabled]="!auth.isConfigured || authenticating">{{ authenticating ? 'Please wait…' : authMode === 'register' ? 'Create account' : 'Sign in' }}</ion-button>
+          </form>
+          <ion-button *ngIf="authMode === 'login'" expand="block" fill="clear" (click)="sendPasswordReset()">Forgot your password?</ion-button>
+          <p class="privacy-copy">Firebase Authentication manages your password. It is never stored in your Firestore profile.</p>
+        </div>
+        <div *ngIf="auth.currentUser as account" class="profile-dashboard">
+          <header class="profile-identity-card">
+            <div class="profile-avatar"><ion-icon name="person-circle-outline"></ion-icon></div>
+            <div class="profile-identity">
+              <span class="profile-role">{{ isVerifiedAdmin ? 'Administrator account' : 'ResQ-It account' }}</span>
+              <h2>{{ account.fullName || account.email.split('@')[0] }}</h2>
+              <p>{{ account.email }}</p>
+            </div>
+            <div class="profile-identity-actions">
+              <ion-button *ngIf="isVerifiedAdmin" (click)="openAdmin()">Admin dashboard</ion-button>
+              <ion-button fill="clear" color="medium" (click)="signOut()">Sign out</ion-button>
+            </div>
+          </header>
+
+          <div *ngIf="profileLoading" class="profile-load-state" role="status" aria-live="polite">
+            <ion-spinner name="crescent"></ion-spinner>
+            <div><strong>Loading your profile</strong><span>Fetching your saved account details…</span></div>
+          </div>
+          <div *ngIf="profileError" class="profile-error" role="alert">
+            <ion-icon name="alert-circle-outline"></ion-icon>
+            <div><strong>{{ profileDataLoaded ? 'Profile refresh failed' : 'Could not load profile details' }}</strong><p>{{ profileError }}<span *ngIf="profileDataLoaded"> Your previously loaded details are still available.</span></p></div>
+            <ion-button size="small" fill="outline" (click)="openProfile(true)" [disabled]="profileLoading">Try again</ion-button>
+          </div>
+
+          <div class="profile-settings-grid">
+            <form class="profile-form profile-panel" *ngIf="profileDataLoaded && auth.isConfigured" (ngSubmit)="saveProfile()">
+              <div class="profile-panel-heading"><span class="profile-panel-icon"><ion-icon name="person-circle-outline"></ion-icon></span><div><h2>Personal details</h2><p>Keep your contact information up to date.</p></div></div>
+              <label>Full name<input name="profileName" [(ngModel)]="profileDraft.fullName" maxlength="120" autocomplete="name" required></label>
+              <label>Phone number <span>(optional)</span><input name="profilePhone" type="tel" [(ngModel)]="profileDraft.phoneNumber" maxlength="40" autocomplete="tel" placeholder="Your contact number"></label>
+              <label>Emergency contact name <span>(optional)</span><input name="profileContactName" [(ngModel)]="profileDraft.emergencyContactName" maxlength="120" placeholder="Trusted contact"></label>
+              <label>Emergency contact number <span>(optional)</span><input name="profileContactNumber" type="tel" [(ngModel)]="profileDraft.emergencyContactNumber" maxlength="40" placeholder="Trusted contact's number"></label>
+              <ion-button expand="block" type="submit" [disabled]="profileSaving">{{ profileSaving ? 'Saving changes…' : 'Save personal details' }}</ion-button>
+            </form>
+            <div *ngIf="!profileDataLoaded && !profileLoading && !profileError && auth.isConfigured" class="profile-panel profile-pending">
+              <ion-icon name="person-circle-outline"></ion-icon><h2>Profile details are not loaded</h2><p>Refresh your profile to try again.</p>
+              <ion-button fill="outline" (click)="openProfile(true)">Load profile</ion-button>
+            </div>
+            <form class="profile-form profile-panel password-panel" (ngSubmit)="updatePassword()">
+              <div class="profile-panel-heading"><span class="profile-panel-icon"><ion-icon name="shield-checkmark-outline"></ion-icon></span><div><h2>Change password</h2><p>Choose a strong password you have not used elsewhere.</p></div></div>
+              <label>Current password<input name="currentPassword" type="password" [(ngModel)]="currentPassword" autocomplete="current-password" required></label>
+              <label>New password<input name="newPassword" type="password" [(ngModel)]="newPassword" autocomplete="new-password" minlength="8" required></label>
+              <label>Confirm new password<input name="confirmNewPassword" type="password" [(ngModel)]="confirmNewPassword" autocomplete="new-password" minlength="8" required></label>
+              <ion-button expand="block" fill="outline" type="submit">Update password</ion-button>
+            </form>
+          </div>
+
+          <section class="profile-panel profile-report-action">
+            <span class="profile-panel-icon"><ion-icon name="document-text-outline"></ion-icon></span>
+            <div><h2>Emergency report history</h2><p>Review or save a private report in your account.</p></div>
+            <ion-button fill="outline" (click)="submitReport()">Save a report</ion-button>
+          </section>
+
+          <details class="suggestion-details profile-panel">
+            <summary><span class="profile-panel-icon"><ion-icon name="navigate-outline"></ion-icon></span><span><strong>Suggest a facility</strong><small>Send a private suggestion for administrator review.</small></span><ion-icon class="suggestion-chevron" name="chevron-down-outline"></ion-icon></summary>
+            <p class="suggestion-intro">Suggestions do not edit or publish official directory records. An administrator will review the details before any changes are made.</p>
+            <form class="suggestion-form" (ngSubmit)="submitFacilitySuggestion()">
+              <label>Facility name<input name="suggestionName" [(ngModel)]="suggestionDraft.facilityName" maxlength="200" required></label>
+              <label>Facility type<input name="suggestionType" [(ngModel)]="suggestionDraft.facilityType" maxlength="80" required></label>
+              <label>Address (optional)<input name="suggestionAddress" [(ngModel)]="suggestionDraft.address" maxlength="300"></label>
+              <div class="coordinate-fields">
+                <label>Latitude<input name="suggestionLatitude" type="number" min="-90" max="90" step="any" [(ngModel)]="suggestionDraft.latitude" required></label>
+                <label>Longitude<input name="suggestionLongitude" type="number" min="-180" max="180" step="any" [(ngModel)]="suggestionDraft.longitude" required></label>
+              </div>
+              <ion-button type="button" fill="outline" size="small" (click)="useCurrentLocationForSuggestion()">Use current location</ion-button>
+              <label>Contact number (optional)<input name="suggestionPhone" type="tel" [(ngModel)]="suggestionDraft.contactNumber" maxlength="40"></label>
+              <label>Source URL (optional)<input name="suggestionSource" type="url" [(ngModel)]="suggestionDraft.sourceUrl" placeholder="https://..."></label>
+              <ion-button expand="block" type="submit" [disabled]="suggestionSubmitting">{{ suggestionSubmitting ? 'Submitting…' : 'Submit for review' }}</ion-button>
+            </form>
+          </details>
+        </div>
+      </section>
+
+      <section *ngIf="activeTab === 'admin' && !isVerifiedAdmin" class="sub-page admin-page">
+        <button class="back-link" (click)="activeTab = 'profile'">← Back to profile</button>
+        <div class="notice-card"><ion-icon name="shield-checkmark-outline"></ion-icon><p><strong>Administrator access only</strong><br>Only the verified administrator can add, edit, or delete official emergency information. Users can open the phone or SMS app for valid numbers shown in public records.</p></div>
+      </section>
+
+      <section *ngIf="activeTab === 'admin' && isVerifiedAdmin" class="sub-page admin-page">
+        <button class="back-link" (click)="activeTab = 'profile'">← Back to profile</button>
+        <div class="section-heading admin-title">
+          <div><p class="eyebrow">RESQ-IT CONTROL CENTER</p><h1>Administrator dashboard</h1></div>
+          <ion-button fill="outline" (click)="loadAdminData()" [disabled]="adminLoading">
+            <ion-icon name="refresh-outline" slot="start"></ion-icon> Refresh
+          </ion-button>
+        </div>
+        <p class="subtitle admin-safety">Administrator access requires the verified Firebase admin claim on the designated administrator account.</p>
+        <aside *ngIf="adminSection === 'overview' && adminDataLoaded && adminLegacyFacilityCount > 0" class="admin-migration-notice" role="status">
+          <div>
+            <strong>{{ adminLegacyFacilityCount }} existing {{ adminLegacyFacilityCount === 1 ? 'facility record is' : 'facility records are' }} still in <code>emergencyFacilities</code>.</strong>
+            <span>The app directory reads <code>emergencyHotlines</code>. Migrate the legacy records to make them appear in the centralized directory; the source records will remain unchanged.</span>
+          </div>
+          <ion-button size="small" (click)="openAdminHotlinesForMigration()">Review migration</ion-button>
+        </aside>
+        <aside *ngIf="adminSection === 'overview' && adminDataLoaded && adminLegacyFacilityCount === 0 && adminCategories.length === 0 && adminFacilities.length === 0 && adminGuides.length === 0 && adminReports.length === 0 && adminSuggestions.length === 0" class="admin-migration-notice" role="status">
+          <div>
+            <strong>No records were found in the application collections.</strong>
+            <span>The administrator queries succeeded, but returned no documents from <code>emergencyCategories</code>, <code>emergencyHotlines</code>, <code>emergencyGuides</code>, <code>reports</code>, <code>emergencyReports</code>, or <code>facilitySuggestions</code>. Confirm the Firebase project and Firestore Data tab.</span>
+          </div>
+        </aside>
+        <div class="admin-nav" role="tablist" aria-label="Administrator sections">
+          <button *ngFor="let section of ['overview','categories','hotlines','guides','suggestions','reports']"
+            [class.selected]="adminSection === section" (click)="adminSection = $any(section)">
+            {{ section | titlecase }}
+          </button>
+        </div>
+        <div *ngIf="adminError" class="admin-error" role="alert">{{ adminError }}<span *ngIf="adminDataLoaded"> Previously loaded administrator data remains available and may be outdated.</span><ion-button size="small" fill="outline" (click)="loadAdminData(true)" [disabled]="adminLoading">Retry</ion-button></div>
+        <div *ngIf="adminLoading" class="loading-state"><ion-spinner name="crescent"></ion-spinner><span>Loading authorized records…</span></div>
+
+        <ng-container *ngIf="!adminLoading || adminDataLoaded">
+          <div *ngIf="adminSection === 'overview'" class="admin-stat-grid">
+            <article class="admin-stat"><span>Emergency categories</span><strong>{{ adminCategories.length }}</strong></article>
+            <article class="admin-stat"><span>Loaded directory records</span><strong>{{ adminFacilities.length }}</strong></article>
+            <article class="admin-stat"><span>Active hotline records</span><strong>{{ activeHotlineCount }}</strong></article>
+            <article class="admin-stat"><span>Published guides</span><strong>{{ publishedGuideCount }}</strong></article>
+            <article class="admin-stat"><span>Pending facility suggestions</span><strong>{{ pendingSuggestionCount }}</strong></article>
+            <article class="admin-stat"><span>App reports</span><strong>{{ adminReports.length }}</strong><small>Not verified real-world emergencies</small></article>
+            <p class="admin-hint">Choose a section to maintain approved content and review records submitted to the app.</p>
+          </div>
+
+          <section *ngIf="adminSection === 'categories'" class="admin-section">
+            <div class="admin-section-heading"><div><h2>Emergency categories</h2><p>Create, edit, activate or remove public category records.</p></div><ion-button fill="outline" (click)="cancelAdminEdit()">New category</ion-button></div>
+            <form class="admin-form" (ngSubmit)="saveAdminCategory()">
+              <label>Name<input name="catName" [(ngModel)]="categoryDraft.name" maxlength="100" required></label>
+              <label>Slug<input name="catSlug" [(ngModel)]="categoryDraft.slug" pattern="[a-z0-9]+(-[a-z0-9]+)*" required></label>
+              <label>Description<input name="catDescription" [(ngModel)]="categoryDraft.description" maxlength="500"></label>
+              <label>Icon name<input name="catIcon" [(ngModel)]="categoryDraft.icon" maxlength="80"></label>
+              <label>Facility types (comma-separated)<input name="catTypes" [(ngModel)]="categoryDraft.facilityTypesText" placeholder="hospital, clinic"></label>
+              <label>Display order<input name="catOrder" type="number" min="0" max="10000" [(ngModel)]="categoryDraft.displayOrder"></label>
+              <label class="admin-check"><input name="catActive" type="checkbox" [(ngModel)]="categoryDraft.isActive"> Active</label>
+              <div class="admin-form-actions"><ion-button type="submit" [disabled]="adminLoading || adminSaving">{{ adminSaving ? 'Saving…' : adminEditingId ? 'Save category' : 'Create category' }}</ion-button><ion-button *ngIf="adminEditingId" type="button" fill="clear" (click)="cancelAdminEdit()">Cancel</ion-button></div>
+            </form>
+            <div class="admin-record-list">
+              <article *ngFor="let item of adminCategories" class="admin-record">
+                <div><strong>{{ item.name }}</strong><p>{{ item.slug }} · {{ item.isActive ? 'Active' : 'Inactive' }} · {{ item.facilityTypes.join(', ') }}</p></div>
+                <div class="admin-actions"><ion-button fill="clear" size="small" (click)="editAdminRecord('category', item.id)">Edit</ion-button><ion-button fill="clear" color="danger" size="small" (click)="deleteAdminRecord('emergencyCategories', item.id)">Delete</ion-button></div>
+              </article>
+              <p *ngIf="!adminCategories.length" class="admin-empty">No category records have been created.</p>
+            </div>
+          </section>
+
+          <section *ngIf="adminSection === 'hotlines'" class="admin-section">
+            <div class="admin-section-heading"><div><h2>Emergency hotlines and facilities</h2><p>Showing {{ filteredAdminFacilities.length }} of {{ adminFacilities.length }} records loaded directly from Firestore <code>emergencyHotlines</code>. Edit and save writes changes to that Firebase record.</p></div><ion-button fill="outline" (click)="cancelAdminEdit()">Add hotline</ion-button></div>
+            <details *ngIf="adminLegacyFacilities.length" class="admin-section admin-legacy-preview" open>
+              <summary><strong>Legacy records awaiting migration: {{ adminLegacyFacilities.length }}</strong></summary>
+              <p>Read-only source records from <code>emergencyFacilities</code>. Use “Migrate &amp; edit” to copy an individual contact to <code>emergencyHotlines</code> and open its editor, or migrate all records. The original source documents are never changed or deleted.</p>
+              <ion-button size="small" (click)="migrateFacilitiesToHotlines()" [disabled]="facilityMigrationInProgress || adminLoading">Migrate legacy records to Hotlines</ion-button>
+              <div class="admin-record-list">
+                <article *ngFor="let item of adminLegacyFacilities" class="admin-record">
+                  <div>
+                    <strong>{{ item.name }}</strong>
+                    <p>{{ item.category | titlecase }} · {{ item.type }} · {{ item.municipality || 'Municipality unavailable' }}</p>
+                    <p>Firebase document: <code>{{ item.id }}</code></p>
+                    <p>{{ item.address || 'Address unavailable' }} · Phone: {{ item.phone || 'Unavailable' }}</p>
+                    <p>Coordinates: {{ item.latitude ?? 'Not provided' }}, {{ item.longitude ?? 'Not provided' }} · {{ item.verificationStatus || 'unverified' }} · {{ item.isActive ? 'Active' : 'Inactive' }} · Phone {{ item.phoneVerified ? 'verified' : 'unverified' }}</p>
+                  </div>
+                  <div class="admin-actions">
+                    <ion-button size="small" fill="outline" (click)="editLegacyFacility(item)" [disabled]="facilityMigrationInProgress || adminLoading">
+                      {{ isLegacyFacilityMigrated(item) ? 'Edit matching hotline' : 'Migrate & edit' }}
+                    </ion-button>
+                  </div>
+                </article>
+              </div>
+            </details>
+            <aside *ngIf="adminDataLoaded && !adminFacilities.length && adminLegacyFacilityCount > 0" class="admin-migration-notice" role="status">
+              <div>
+                <strong>No canonical hotline records are loaded, but {{ adminLegacyFacilityCount }} legacy facility {{ adminLegacyFacilityCount === 1 ? 'record is' : 'records are' }} available to migrate.</strong>
+                <span>Copy those records into <code>emergencyHotlines</code> to make them available for admin review. They will remain inactive/unverified unless their existing verified status says otherwise.</span>
+              </div>
+              <ion-button size="small" (click)="migrateFacilitiesToHotlines()" [disabled]="facilityMigrationInProgress || adminLoading">Migrate existing facilities</ion-button>
+            </aside>
+            <div class="admin-filter-grid">
+              <label>Search<input id="admin-facility-search" name="adminFacilitySearch" [ngModel]="adminFacilitySearch" (ngModelChange)="onAdminFacilitySearchChange($event)" placeholder="Name, type, address or phone"></label>
+              <label>Municipality<select id="admin-facility-municipality" name="adminFacilityMunicipality" [(ngModel)]="adminFacilityMunicipalityFilter"><option value="all">All municipalities</option><option *ngFor="let municipality of adminFacilityMunicipalities" [value]="municipality">{{ municipality }}</option></select></label>
+              <label>Category<select id="admin-facility-category" name="adminFacilityCategory" [(ngModel)]="adminFacilityCategoryFilter"><option value="all">All categories</option><option *ngFor="let category of emergencyCategories" [value]="category">{{ category | titlecase }}</option></select></label>
+              <label>Verification<select id="admin-facility-verification" name="adminFacilityVerification" [(ngModel)]="adminFacilityVerificationFilter"><option value="all">Any verification</option><option value="verified">Verified</option><option value="unverified">Unverified</option></select></label>
+              <label>Status<select id="admin-facility-status" name="adminFacilityStatus" [(ngModel)]="adminFacilityActiveFilter"><option value="all">Any status</option><option value="active">Active</option><option value="inactive">Inactive</option></select></label>
+            </div>
+            <div class="notice-card hotline-placeholder">
+              <ion-icon name="document-text-outline"></ion-icon>
+              <div>
+                <p><strong>Import facilities or hotline contacts from CSV</strong><br>Preview detects invalid rows and duplicates before importing. New records are saved to <code>emergencyHotlines</code> as inactive and unverified drafts. Set <code>isPublic</code> to true only for numbers that should be visible to users for review. Users can open the phone or SMS app for any valid displayed number; unverified contacts are labeled and should be confirmed before use.</p>
+                <div class="admin-form-actions">
+                  <ion-button type="button" fill="outline" (click)="downloadFacilityCsvTemplate()">Download CSV template</ion-button>
+                  <label for="facility-csv-file">Choose facility CSV<input id="facility-csv-file" name="facilityCsvFile" type="file" accept=".csv,text/csv" (change)="previewFacilityCsv($event)" [disabled]="facilityCsvImporting || adminLoading"></label>
+                  <ion-button type="button" fill="outline" (click)="migrateFacilitiesToHotlines()" [disabled]="facilityMigrationInProgress || adminLoading">Migrate Existing Facilities to Hotlines</ion-button>
+                </div>
+                <p *ngIf="facilityCsvImporting" class="map-hotlines-note" aria-live="polite">Importing facility drafts…</p>
+                <p *ngIf="facilityCsvImporting" class="map-hotlines-note" aria-live="polite">Import progress: {{ facilityCsvImportProgress }}%</p>
+                <p *ngIf="facilityCsvImportMessage" class="map-hotlines-note" aria-live="polite">{{ facilityCsvImportMessage }}</p>
+                <pre *ngIf="facilityCsvImportError" class="map-hotlines-note hotline-load-error" role="alert">{{ facilityCsvImportError }}</pre>
+                <div *ngIf="facilityMigrationInProgress || facilityMigrationResult" class="migration-progress" role="status" aria-live="polite">
+                  <p *ngIf="facilityMigrationInProgress">Migration progress: {{ facilityMigrationProgress.processed }} / {{ facilityMigrationProgress.total }} · copied {{ facilityMigrationProgress.migrated }} · skipped {{ facilityMigrationProgress.skipped }} · failed {{ facilityMigrationProgress.failed }}</p>
+                  <p *ngIf="facilityMigrationResult && !facilityMigrationInProgress">Migration complete: {{ facilityMigrationResult.migrated }} copied · {{ facilityMigrationResult.skipped }} duplicate/invalid records skipped · {{ facilityMigrationResult.failed.length }} failed.</p>
+                  <p *ngFor="let skipped of facilityMigrationResult?.skippedRecords">{{ skipped.facilityId }} skipped: {{ skipped.reason }}</p>
+                  <p *ngFor="let failure of facilityMigrationResult?.failed" class="hotline-load-error">{{ failure.facilityId }} failed: {{ failure.error }}</p>
+                </div>
+                <p *ngIf="facilityMigrationError" class="hotline-load-error" role="alert">{{ facilityMigrationError }}</p>
+                <div *ngIf="facilityCsvRows.length" class="admin-record-list">
+                  <p aria-live="polite">CSV rows: {{ facilityCsvRows.length }} · Valid: {{ facilityCsvValidCount }} · Invalid: {{ facilityCsvInvalidCount }} · Duplicates: {{ facilityCsvDuplicateCount }}</p>
+                  <label *ngIf="facilityCsvHasExistingDuplicates" class="admin-check">
+                    <input name="facilityCsvUpdateDuplicates" type="checkbox" [(ngModel)]="facilityCsvUpdateDuplicates">
+                    Update matching unverified duplicates (verified records are always preserved)
+                  </label>
+                  <article *ngFor="let row of facilityCsvRows" class="admin-record">
+                    <div>
+                      <strong>Row {{ row.line }} · {{ row.facility.name || 'Unnamed facility' }}</strong>
+                      <p>Category: {{ row.categoryLabel }} · Municipality: {{ row.facility.municipality || 'Not provided' }}</p>
+                      <p>Address: {{ row.facility.address || 'Not provided' }}</p>
+                      <p *ngIf="row.facility.latitude !== undefined && row.facility.longitude !== undefined">Coordinates: {{ row.facility.latitude }}, {{ row.facility.longitude }}</p>
+                      <p *ngIf="row.facility.latitude === undefined || row.facility.longitude === undefined">Coordinates: Not available · Location unverified</p>
+                      <p>Phone: {{ row.facility.phone || 'No contact number' }}<span *ngIf="row.facility.alternativePhone?.length"> · Alternative: {{ row.facility.alternativePhone?.join(', ') }}</span></p>
+                      <p>Public directory: {{ row.facility.isPublic ? 'Yes (review only)' : 'No' }}</p>
+                      <p *ngIf="row.facility.sourceUrl">Source: <a [href]="row.facility.sourceUrl" target="_blank" rel="noopener noreferrer">{{ row.facility.sourceUrl }}</a></p>
+                      <p *ngIf="row.duplicateType === 'existing'" class="hotline-load-error">Duplicate of an existing facility{{ row.duplicateOfId ? ' (' + row.duplicateOfId + ')' : '' }}.</p>
+                      <p *ngIf="row.duplicateType === 'csv'" class="hotline-load-error">Duplicate row in this CSV; this repeated row will be skipped.</p>
+                      <p *ngIf="row.errors.length" class="hotline-load-error">Errors: {{ row.errors.join('; ') }}</p>
+                      <p *ngIf="row.warnings.length">Warnings: {{ row.warnings.join('; ') }}</p>
+                      <p *ngIf="row.imported">Imported as unverified and inactive.</p>
+                      <p *ngIf="row.updated">Updated as unverified and inactive.</p>
+                      <p *ngIf="row.importError" class="hotline-load-error">{{ row.importError }}</p>
+                      <p *ngIf="!row.errors.length && !row.imported && !row.updated && !row.skipped">Ready for review.</p>
+                    </div>
+                  </article>
+                  <div class="admin-form-actions"><ion-button type="button" (click)="importFacilityCsv()" [disabled]="facilityCsvImporting || facilityCsvImportableCount === 0">Import {{ facilityCsvImportableCount }} rows</ion-button><ion-button type="button" fill="clear" (click)="facilityCsvRows = []; facilityCsvImportMessage = ''; facilityCsvImportError = ''">Clear preview</ion-button></div>
+                </div>
+              </div>
+            </div>
+            <form class="admin-form" (ngSubmit)="saveAdminFacility()">
+              <label>Contact or facility name<input name="facilityName" [(ngModel)]="facilityDraft.name" maxlength="160" required></label>
+              <label>Facility type (optional)<input name="facilityType" [(ngModel)]="facilityDraft.type" maxlength="80" placeholder="hospital, clinic, fire_station"></label>
+              <label>Emergency category<select name="facilityCategory" [(ngModel)]="facilityDraft.category" required><option *ngFor="let category of emergencyCategories" [value]="category">{{ category === 'accident' ? 'Accident / Rescue' : (category | titlecase) }}</option></select></label>
+              <label>Municipality<input name="facilityMunicipality" [(ngModel)]="facilityDraft.municipality" maxlength="100" required></label>
+              <label>Barangay (optional)<input name="facilityBarangay" [(ngModel)]="facilityDraft.barangay" maxlength="100"></label>
+              <label>Region / province (optional)<input name="facilityRegion" [(ngModel)]="facilityDraft.region" maxlength="120"></label>
+              <label class="wide-field">Complete address (optional)<input name="facilityAddress" [(ngModel)]="facilityDraft.address" maxlength="300"></label>
+              <label>Latitude (optional)<input name="facilityLatitude" type="number" min="-90" max="90" step="any" [(ngModel)]="facilityDraft.latitude"></label>
+              <label>Longitude (optional)<input name="facilityLongitude" type="number" min="-180" max="180" step="any" [(ngModel)]="facilityDraft.longitude"></label>
+              <div class="admin-form-actions wide-field"><ion-button type="button" fill="outline" (click)="findFacilityCoordinates()" [disabled]="facilityCoordinatesLoading">{{ facilityCoordinatesLoading ? 'Finding coordinates…' : 'Find coordinates from address' }}</ion-button></div>
+              <label>Contact number<input name="facilityPhone" type="tel" [(ngModel)]="facilityDraft.phone" maxlength="40"></label>
+              <label>Alternative contact numbers (separate with |)<input name="facilityAlternativePhone" type="text" [(ngModel)]="facilityDraft.alternativePhoneText" maxlength="500" placeholder="(043) 000 0000 | 0917 000 0000"></label>
+              <label>Email address<input name="facilityEmail" type="email" [(ngModel)]="facilityDraft.email" maxlength="200"></label>
+              <label>Facebook URL<input name="facilityFacebook" type="url" [(ngModel)]="facilityDraft.facebook" maxlength="500"></label>
+              <label>Website URL<input name="facilityWebsite" type="url" [(ngModel)]="facilityDraft.website" maxlength="500"></label>
+              <label class="admin-check"><input name="facilityPhoneVerified" type="checkbox" [(ngModel)]="facilityDraft.phoneVerified"> Phone number verified against source</label>
+              <label class="admin-check"><input name="facilityLocationVerified" type="checkbox" [(ngModel)]="facilityDraft.locationVerified"> Location verified</label>
+              <label class="admin-check"><input name="facilityCallable" type="checkbox" [(ngModel)]="facilityDraft.isCallable"> Mark contact as reviewed for emergency use</label>
+              <label>Operating hours<input name="facilityHours" [(ngModel)]="facilityDraft.openingHours" maxlength="160"></label>
+              <label class="wide-field">Description<textarea name="facilityDescription" [(ngModel)]="facilityDraft.description" maxlength="1000"></textarea></label>
+              <label class="wide-field">Official facility source URL (optional)<input name="facilitySource" type="url" [(ngModel)]="facilityDraft.sourceUrl" placeholder="https://..."></label>
+              <label>Facility verification<select name="facilityVerification" [(ngModel)]="facilityDraft.verificationStatus"><option value="unverified">Unverified</option><option value="verified">Verified</option></select></label>
+              <label class="admin-check"><input name="facilityActive" type="checkbox" [(ngModel)]="facilityDraft.isActive"> Active</label>
+              <label class="admin-check"><input name="facilityPublic" type="checkbox" [(ngModel)]="facilityDraft.isPublic"> Show in public directory (visible numbers can be opened in the phone or SMS app; verify before use)</label>
+              <div class="admin-form-actions wide-field"><ion-button type="submit" [disabled]="adminLoading || adminSaving">{{ adminSaving ? 'Saving…' : adminEditingType === 'facility' ? 'Save hotline' : 'Create hotline' }}</ion-button><ion-button *ngIf="adminEditingType === 'facility'" type="button" fill="clear" (click)="cancelAdminEdit()">Cancel</ion-button></div>
+            </form>
+            <div class="admin-record-list">
+              <article *ngFor="let item of filteredAdminFacilities" class="admin-record">
+                <div><strong>{{ item.name }} · {{ item.type }}</strong><p>Firebase document: <code>{{ item.id }}</code></p><p>{{ item.municipality || 'Municipality unavailable' }}, {{ item.region || 'Region unavailable' }} · {{ item.category | titlecase }}</p><p>{{ item.address || 'Address unavailable' }} · Phone: {{ item.phone || 'Unavailable' }} · {{ item.verificationStatus || 'unverified' }} · {{ item.isActive ? 'Active' : 'Inactive' }} · {{ item.isPublic ? 'Public review listing' : 'Not public' }}</p><p>Phone {{ item.phoneVerified ? 'verified' : 'unverified' }} · Location {{ item.locationVerified ? 'verified' : 'unverified' }} · Admin-reviewed {{ item.isCallable ? 'yes' : 'no' }}</p><p>Alternative contacts: {{ item.alternativePhone?.join(', ') || 'None' }} · Hours: {{ item.openingHours || 'Not provided' }}</p><p>Coordinates: {{ item.latitude ?? 'Not provided' }}, {{ item.longitude ?? 'Not provided' }} · Added: {{ item.createdAt ? (item.createdAt | date:'mediumDate') : 'Date unavailable' }}</p><p>Barangay: {{ item.barangay || 'Not provided' }}</p><a *ngIf="item.officialSourceUrl" [href]="item.officialSourceUrl" target="_blank" rel="noopener noreferrer">Official source ↗</a><a *ngIf="item.facebookUrl" [href]="item.facebookUrl" target="_blank" rel="noopener noreferrer"> · Facebook ↗</a><a *ngIf="item.websiteUrl" [href]="item.websiteUrl" target="_blank" rel="noopener noreferrer"> · Website ↗</a></div>
+                <div class="admin-actions">
+                  <ion-button fill="clear" size="small" (click)="editFacility(item.id)">Edit</ion-button>
+                  <ion-button fill="clear" size="small" (click)="toggleHotlineActive(item)">{{ item.isActive ? 'Deactivate' : 'Activate' }}</ion-button>
+                  <ion-button fill="clear" size="small" (click)="verifyHotline(item)" [disabled]="item.verificationStatus === 'verified'">Verify contact</ion-button>
+                  <ion-button fill="clear" size="small" (click)="verifyHotlinePhone(item)" [disabled]="item.phoneVerified || !item.phone">Verify phone</ion-button>
+                  <ion-button fill="clear" size="small" (click)="verifyHotlineLocation(item)" [disabled]="item.locationVerified || !facilityHasCoordinates(item)">Verify location</ion-button>
+                  <ion-button fill="clear" color="danger" size="small" (click)="deleteFacility(item.id)">Delete</ion-button>
+                </div>
+              </article>
+              <p *ngIf="!filteredAdminFacilities.length && !adminFacilities.length" class="admin-empty">No records are listed yet. Add an emergency hotline or facility here.</p>
+              <p *ngIf="adminFacilities.length && !filteredAdminFacilities.length" class="admin-empty">No hotline records match these filters.</p>
+            </div>
+          </section>
+
+
+          <section *ngIf="adminSection === 'guides'" class="admin-section">
+            <div class="admin-section-heading"><div><h2>Emergency guides</h2><p>Publish only reviewed guidance and keep its authoritative source.</p></div><ion-button fill="outline" (click)="cancelAdminEdit()">New guide</ion-button></div>
+            <form class="admin-form" (ngSubmit)="saveAdminGuide()">
+              <label>Title<input name="guideTitle" [(ngModel)]="guideDraft.title" maxlength="160" required></label>
+              <label>Category<select name="guideCategory" [(ngModel)]="guideDraft.category"><option *ngFor="let category of emergencyCategories" [value]="category">{{ category | titlecase }}</option></select></label>
+              <label class="wide-field">Summary<textarea name="guideSummary" [(ngModel)]="guideDraft.summary" maxlength="1000" required></textarea></label>
+              <label class="wide-field">Instructions<textarea name="guideInstructions" [(ngModel)]="guideDraft.instructions" maxlength="10000" required></textarea></label>
+              <label class="wide-field">Official HTTPS source URL<input name="guideSource" type="url" [(ngModel)]="guideDraft.sourceUrl" placeholder="https://..." required></label>
+              <label class="admin-check"><input name="guidePublished" type="checkbox" [(ngModel)]="guideDraft.isPublished"> Published</label>
+              <div class="admin-form-actions wide-field"><ion-button type="submit" [disabled]="adminLoading || adminSaving">{{ adminSaving ? 'Saving…' : adminEditingId ? 'Save guide' : 'Create guide' }}</ion-button><ion-button *ngIf="adminEditingId" type="button" fill="clear" (click)="cancelAdminEdit()">Cancel</ion-button></div>
+            </form>
+            <div class="admin-record-list">
+              <article *ngFor="let item of adminGuides" class="admin-record">
+                <div><strong>{{ item.title }}</strong><p>{{ item.category | titlecase }} · {{ item.isPublished ? 'Published' : 'Draft' }} · {{ item.summary }}</p><a [href]="item.sourceUrl" target="_blank" rel="noopener noreferrer">Official source ↗</a></div>
+                <div class="admin-actions"><ion-button fill="clear" size="small" (click)="editAdminRecord('guide', item.id)">Edit</ion-button><ion-button fill="clear" color="danger" size="small" (click)="deleteAdminRecord('emergencyGuides', item.id)">Delete</ion-button></div>
+              </article>
+              <p *ngIf="!adminGuides.length" class="admin-empty">No guide records have been added or reviewed.</p>
+            </div>
+          </section>
+
+          <section *ngIf="adminSection === 'suggestions'" class="admin-section">
+            <div class="admin-section-heading"><div><h2>Facility suggestions</h2><p>Review submissions; approval does not imply external verification beyond this app's review.</p></div></div>
+            <div class="admin-record-list">
+              <article *ngFor="let item of adminSuggestions" class="admin-record suggestion-record">
+                <div><strong>{{ item.facilityName }}</strong><p>{{ item.facilityType }} · {{ item.address || 'Address unavailable' }}</p><p>{{ item.latitude }}, {{ item.longitude }} · {{ item.contactNumber || 'No contact provided' }}</p>
+                  <a *ngIf="item.sourceUrl" [href]="item.sourceUrl" target="_blank" rel="noopener noreferrer">Submitted source ↗</a>
+                  <small>Submitter UID: {{ item.submittedBy }} · {{ item.reviewStatus }}</small>
+                  <label *ngIf="item.reviewStatus === 'pending'" class="review-note">Review note (optional)<input [(ngModel)]="suggestionReviewNote" [name]="'review-' + item.id" maxlength="1000"></label>
+                </div>
+                <div class="admin-actions" *ngIf="item.reviewStatus === 'pending'"><ion-button size="small" (click)="approveSuggestionAsDraft(item)">Approve &amp; prepare facility draft</ion-button><ion-button size="small" color="medium" (click)="reviewSuggestion(item, 'rejected')">Reject</ion-button></div>
+              </article>
+              <p *ngIf="!adminSuggestions.length" class="admin-empty">No facility suggestions have been submitted.</p>
+            </div>
+          </section>
+
+          <section *ngIf="adminSection === 'reports'" class="admin-section">
+            <div class="admin-section-heading"><div><h2>App-submitted reports</h2><p>These are records saved in ResQ-It, not confirmed emergency calls or dispatched incidents.</p></div></div>
+            <div class="admin-record-list">
+              <article *ngFor="let item of adminReports" class="admin-record">
+                <div><strong>{{ item.category | titlecase }} · {{ item.status }}</strong><p>{{ item.description || 'No description supplied' }}</p><small>Reference {{ item.reportId }} · account {{ item.userId }} · {{ item.createdAt | date:'medium' }}</small></div>
+                <label class="report-status">App status<select [id]="'report-status-' + item.reportId" [name]="'reportStatus-' + item.reportId" [value]="item.status" (change)="setAdminReportStatus(item.reportId, $event, item.sourceCollection)"><option>Submitted</option><option>Under Review</option><option>Resolved</option><option>Closed</option></select></label>
+              </article>
+              <p *ngIf="!adminReports.length" class="admin-empty">No app report records are available.</p>
+            </div>
+          </section>
+        </ng-container>
+      </section>
+    </main>
+  </ion-content>
+
+  <ion-footer class="bottom-nav">
+    <ion-tab-bar>
+      <ion-tab-button *ngIf="!guestMode" [class.tab-selected]="activeTab === 'home' || activeTab === 'guides'" (click)="activeTab = 'home'">
+        <ion-icon name="home-outline"></ion-icon><ion-label>Home</ion-label>
+      </ion-tab-button>
+      <ion-tab-button [class.tab-selected]="activeTab === 'map' || activeTab === 'help'" (click)="openNearbyEmergency()">
+        <ion-icon name="map-outline"></ion-icon><ion-label>Map</ion-label>
+      </ion-tab-button>
+      <ion-tab-button [class.tab-selected]="activeTab === 'hotlines'" (click)="openHotlines()">
+        <ion-icon name="call-outline"></ion-icon><ion-label>Hotlines</ion-label>
+      </ion-tab-button>
+      <ion-tab-button *ngIf="!guestMode" [class.tab-selected]="activeTab === 'reports'" (click)="openReports()">
+        <ion-icon name="document-text-outline"></ion-icon><ion-label>Reports</ion-label>
+      </ion-tab-button>
+      <ion-tab-button *ngIf="!guestMode" [class.tab-selected]="activeTab === 'profile'" (click)="openProfile()">
+        <ion-icon name="person-circle-outline"></ion-icon><ion-label>Profile</ion-label>
+      </ion-tab-button>
+    </ion-tab-bar>
+  </ion-footer>
+    </ng-container>
+  </ng-container>
+  <ng-template #authStarting>
+    <div class="auth-starting"><ion-spinner name="crescent"></ion-spinner><span>Securely checking your session…</span></div>
+  </ng-template>
+</ion-app>
