@@ -2387,10 +2387,12 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private loadLeaflet(): Promise<typeof import('leaflet')> {
     if (!this.leafletModule) {
-      this.leafletModule = import('leaflet').catch((error: unknown) => {
-        this.leafletModule = undefined;
-        throw error;
-      });
+      this.leafletModule = import('leaflet')
+        .then((module) => 'default' in module ? module.default : module)
+        .catch((error: unknown) => {
+          this.leafletModule = undefined;
+          throw error;
+        });
     }
     return this.leafletModule;
   }
